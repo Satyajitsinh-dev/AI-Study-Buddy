@@ -125,6 +125,41 @@
     <div id="quiz-setup">
       <div class="subject-tabs" id="quiz-subject-tabs"></div>
       <div class="chapter-grid" id="chapter-grid"></div>
+
+      <!-- Topic, Difficulty, Class filters — shown after chapter is picked -->
+      <div class="quiz-filters" id="quiz-filters" style="display:none;">
+        <div class="filter-row">
+          <div class="filter-group">
+            <label class="filter-label">📚 Topic</label>
+            <select id="filter-topic" class="quiz-count-sel" style="min-width:160px">
+              <option value="">All Topics</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label class="filter-label">🎯 Difficulty</label>
+            <select id="filter-difficulty" class="quiz-count-sel">
+              <option value="">All Levels</option>
+              <option value="Easy">🟢 Easy</option>
+              <option value="Medium">🟡 Medium</option>
+              <option value="Hard">🔴 Hard</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label class="filter-label">🎓 Class</label>
+            <select id="filter-class" class="quiz-count-sel">
+              <option value="">All Classes</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label class="filter-label">📝 Type</label>
+            <select id="filter-type" class="quiz-count-sel">
+              <option value="">All Types</option>
+            </select>
+          </div>
+        </div>
+        <div id="filter-count-badge" class="filter-count-badge"></div>
+      </div>
+
       <div class="quiz-start-row" id="quiz-start-row" style="display:none;">
         <p class="selected-info" id="selected-info"></p>
         <div class="quiz-count-row">
@@ -185,23 +220,46 @@
         <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="handleCsvFile(event)" />
       </div>
       <div class="csv-format-box">
-        <div class="csv-format-title">&#x1F4CB; Required CSV Column Headers</div>
-        <div class="csv-format-table-wrap">
-          <table class="csv-format-table">
-            <thead><tr>
-              <th>question</th><th>option_a</th><th>option_b</th><th>option_c</th><th>option_d</th>
-              <th>correct_answer</th><th>explanation</th><th>subject</th><th>chapter</th>
-            </tr></thead>
-            <tbody><tr>
-              <td>What is 2+2?</td><td>3</td><td>4</td><td>5</td><td>6</td>
-              <td>B</td><td>2+2 equals 4!</td><td>Math</td><td>Integers</td>
-            </tr></tbody>
-          </table>
+        <div class="csv-format-title">&#x1F4CB; CSV Column Reference</div>
+
+        <!-- Required columns -->
+        <div class="csv-col-group">
+          <div class="csv-col-group-label required-label">&#x2705; Required Columns</div>
+          <div class="csv-format-table-wrap">
+            <table class="csv-format-table">
+              <thead><tr>
+                <th>question</th><th>option_a</th><th>option_b</th><th>option_c</th><th>option_d</th><th>correct_answer</th>
+              </tr></thead>
+              <tbody><tr>
+                <td>What is 2+2?</td><td>3</td><td>4</td><td>5</td><td>6</td><td>B</td>
+              </tr></tbody>
+            </table>
+          </div>
         </div>
+
+        <!-- Optional columns -->
+        <div class="csv-col-group">
+          <div class="csv-col-group-label optional-label">&#x1F4A1; Optional Columns (but recommended!)</div>
+          <div class="csv-format-table-wrap">
+            <table class="csv-format-table">
+              <thead><tr>
+                <th>question_id</th><th>class</th><th>subject</th><th>chapter</th><th>topic</th>
+                <th>difficulty</th><th>question_type</th><th>explanation</th>
+                <th>learning_objective</th><th>ncert_reference</th>
+              </tr></thead>
+              <tbody><tr>
+                <td>Q001</td><td>7</td><td>Math</td><td>Integers</td><td>Addition</td>
+                <td>Easy</td><td>MCQ</td><td>2+2 equals 4!</td>
+                <td>Understand integer addition</td><td>NCERT Ch.1 Pg.4</td>
+              </tr></tbody>
+            </table>
+          </div>
+        </div>
+
         <div class="csv-format-notes">
           <span>&#x2705; <b>correct_answer</b>: A, B, C or D</span>
-          <span>&#x2705; <b>subject</b>: Any label you want</span>
-          <span>&#x2705; <b>explanation</b> and <b>chapter</b>: Optional but helpful</span>
+          <span>&#x2705; <b>difficulty</b>: Easy / Medium / Hard</span>
+          <span>&#x2705; <b>question_type</b>: MCQ / True/False / Fill in the blank</span>
           <button class="csv-download-btn" onclick="downloadSampleCsv()">&#x2B07;&#xFE0F; Download Sample CSV</button>
         </div>
       </div>

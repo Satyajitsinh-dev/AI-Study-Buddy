@@ -687,12 +687,13 @@ function selectSubject(subj, btn) {
 function renderQuizChapters() {
   const grid = document.getElementById('chapter-grid');
   if (selectedSubject === '__all__') {
-    // All subjects: show a single "All Chapters" option auto-selected
     selectedChapter = '__all__';
-    grid.innerHTML = `<button class="chap-btn selected" onclick="">All Chapters</button>`;
-    const row = document.getElementById('quiz-start-row');
-    row.style.display = 'block';
-    document.getElementById('selected-info').textContent = `📚 All Subjects — Mixed Questions`;
+    grid.innerHTML = `<button class="chap-btn selected">All Chapters</button>`;
+    populateFilterDropdowns();
+    document.getElementById('quiz-filters').style.display = 'block';
+    document.getElementById('quiz-start-row').style.display = 'block';
+    document.getElementById('selected-info').textContent = '📚 All Subjects — Mixed Questions';
+    updateFilterCountBadge();
     return;
   }
   const chapters = getChaptersForSubject(selectedSubject);
@@ -705,11 +706,103 @@ function selectChapter(ch, btn) {
   selectedChapter = ch;
   document.querySelectorAll('.chap-btn').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
+  populateFilterDropdowns();
+  document.getElementById('quiz-filters').style.display = 'block';
   document.getElementById('quiz-start-row').style.display = 'block';
-  const label = ch === '__all__' || ch === 'All Chapters'
-    ? `📚 ${selectedSubject} — All Chapters`
+  const label = ch === 'All Chapters'
+    ? `📚 ${selectedSubject === '__all__' ? 'All Subjects' : selectedSubject} — All Chapters`
     : `📚 ${selectedSubject} › ${ch}`;
   document.getElementById('selected-info').textContent = label;
+  updateFilterCountBadge();
+}
+
+// Populate the four filter <select> dropdowns based on subject+chapter pool
+function populateFilterDropdowns() {
+  const allQ = getAllQuestions();
+  let pool = allQ;
+  if (selectedSubject !== '__all__') pool = pool.filter(q => q.subject === selectedSubject);
+  if (selectedChapter && selectedChapter !== '__all__' && selectedChapter !== 'All Chapters') {
+    pool = pool.filter(q => q.chapter === selectedChapter);
+  }
+
+  // Topics
+  const topics = [...new Set(pool.map(q => q.topic).filter(Boolean))].sort();
+  const topicSel = document.getElementById('filter-topic');
+  if (topicSel) {
+    topicSel.innerHTML = `<option value="">All Topics</option>` +
+      topics.map(t => `<option value="${t}">${t}</option>`).join('');
+    topicSel.onchange = updateFilterCountBadge;
+  }
+
+  // Classes
+  const classes = [...new Set(pool.map(q => q.classLevel).filter(Boolean))].sort();
+  const classSel = document.getElementById('filter-class');
+  if (classSel) {
+    classSel.innerHTML = `<option value="">All Classes</option>` +
+      classes.map(c => `<option value="${c}">Class ${c}</option>`).join('');
+    classSel.onchange = updateFilterCountBadge;
+  }
+
+  // Question types
+  const types = [...new Set(pool.map(q => q.questionType).filter(Boolean))].sort();
+  const typeSel = document.getElementById('filter-type');
+  if (typeSel) {
+    typeSel.innerHTML = `<option value="">All Types</option>` +
+      types.map(t => `<option value="${t}">${t}</option>`).join('');
+    typeSel.onchange = updateFilterCountBadge;
+  }
+
+  // Difficulty onchange
+  const diffSel = document.getElementById('filter-difficulty');
+  if (diffSel) diffSel.onchange = updateFilterCountBadge;
+}
+
+// Get filtered pool using the four <select> dropdowns
+function getFilteredPool() {
+  const allQ       = getAllQuestions();
+  let pool         = allQ;
+  if (selectedSubject !== '__all__') pool = pool.filter(q => q.subject === selectedSubject);
+  if (selectedChapter && selectedChapter !== '__all__' && selectedChapter !== 'All Chapters') {
+    pool = pool.filter(q => q.chapter === selectedChapter);
+  }
+  const topic      = document.getElementById('filter-topic')?.value      || '';
+  const difficulty = document.getElementById('filter-difficulty')?.value || '';
+  const classLevel = document.getElementById('filter-class')?.value      || '';
+  const qtype      = document.getElementById('filter-type')?.value       || '';
+  if (topic)      pool = pool.filter(q => q.topic === topic);
+  if (difficulty) pool = pool.filter(q => q.difficulty?.toLowerCase() === difficulty.toLowerCase());
+  if (classLevel) pool = pool.filter(q => q.classLevel === classLevel);
+  if (qtype)      pool = pool.filter(q => q.questionType?.toLowerCase() === qtype.toLowerCase());
+  return pool;
+}
+
+// Show live count of matching questions
+function updateFilterCountBadge() {
+  const pool  = getFilteredPool();
+  const badge = document.getElementById('filter-count-badge');
+  if (!badge) return;
+  if (!pool.length) {
+    badge.innerHTML = `<span class="filter-badge-zero">⚠️ No questions match these filters — try different options</span>`;
+    return;
+  }
+  const easy   = pool.filter(q => q.difficulty?.toLowerCase() === 'easy').length;
+  const medium = pool.filter(q => q.difficulty?.toLowerCase() === 'medium').length;
+  const hard   = pool.filter(q => q.difficulty?.toLowerCase() === 'hard').length;
+  const pills  = [
+    easy   ? `<span class="diff-pill easy">🟢 ${easy} Easy</span>`     : '',
+    medium ? `<span class="diff-pill medium">🟡 ${medium} Medium</span>` : '',
+    hard   ? `<span class="diff-pill hard">🔴 ${hard} Hard</span>`       : ''
+  ].filter(Boolean).join('');
+  badge.innerHTML = `<span class="filter-badge-ok">✅ <b>${pool.length}</b> questions available ${pills}</span>`;
+}
+
+// Helper: count occurrences by key function
+function countBy(arr, fn) {
+  return arr.reduce((acc, item) => {
+    const key = fn(item) || 'unknown';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
 }
 
 // =====================================================
@@ -718,35 +811,19 @@ function selectChapter(ch, btn) {
 
 function generateQuiz() {
   quizMode = 'chapter';
-  const allQ   = getAllQuestions();
-  const count  = parseInt(document.getElementById('quiz-count-select')?.value || '5');
-  let pool = [];
+  const count = parseInt(document.getElementById('quiz-count-select')?.value || '5');
+  const pool  = getFilteredPool();
 
-  if (selectedSubject === '__all__') {
-    pool = allQ;
-  } else if (!selectedChapter || selectedChapter === '__all__' || selectedChapter === 'All Chapters') {
-    pool = allQ.filter(q => q.subject === selectedSubject);
-  } else {
-    pool = allQ.filter(q => q.subject === selectedSubject && q.chapter === selectedChapter);
-    if (pool.length < count) {
-      // pad with same-subject questions
-      const extra = allQ.filter(q => q.subject === selectedSubject && q.chapter !== selectedChapter);
-      pool = [...pool, ...extra];
-    }
-  }
-
-  if (pool.length === 0) {
-    showToast('⚠️ No questions found! Upload a CSV or pick another subject.');
+  if (!pool.length) {
+    showToast('⚠️ No questions match your filters! Try a broader selection.');
     return;
   }
-
   currentQuizQuestions = shuffle(pool).slice(0, Math.min(count, pool.length));
   currentQIndex = 0;
-  quizScore = 0;
-
+  quizScore     = 0;
   document.getElementById('quiz-setup').style.display = 'none';
   document.getElementById('quiz-result').style.display = 'none';
-  document.getElementById('quiz-play').style.display = 'block';
+  document.getElementById('quiz-play').style.display   = 'block';
   renderQuestion();
 }
 
@@ -793,10 +870,22 @@ function startDaily() {
 // SECTION 10: RENDER QUIZ QUESTION
 // =====================================================
 
+// Shared meta-pill builder used by all question renders
+function buildMetaPills(q) {
+  return [
+    q.classLevel  ? `<span class="q-meta-pill pill-class">🎓 Class ${q.classLevel}</span>` : '',
+    q.subject     ? `<span class="q-meta-pill pill-subject">📚 ${q.subject}</span>` : '',
+    q.chapter     ? `<span class="q-meta-pill pill-chapter">📖 ${q.chapter}</span>` : '',
+    q.topic       ? `<span class="q-meta-pill pill-topic">🔖 ${q.topic}</span>` : '',
+    q.difficulty  ? `<span class="q-meta-pill" style="background:${DIFF_COLOR[q.difficulty.toLowerCase()]||'#6b7280'}22;color:${DIFF_COLOR[q.difficulty.toLowerCase()]||'#6b7280'};border-color:${DIFF_COLOR[q.difficulty.toLowerCase()]||'#6b7280'}40">${DIFF_EMOJI[q.difficulty.toLowerCase()]||'⚪'} ${q.difficulty}</span>` : '',
+    q.questionType && q.questionType !== 'MCQ' ? `<span class="q-meta-pill pill-type">${QTYPE_EMOJI[q.questionType?.toLowerCase()]||'📋'} ${q.questionType}</span>` : ''
+  ].filter(Boolean).join('');
+}
+
 function renderQuestion() {
-  const q = currentQuizQuestions[currentQIndex];
+  const q     = currentQuizQuestions[currentQIndex];
   const total = currentQuizQuestions.length;
-  const pct = (currentQIndex / total) * 100;
+  const pct   = (currentQIndex / total) * 100;
 
   document.getElementById('qpf').style.width = pct + '%';
   document.getElementById('quiz-counter').textContent = `Question ${currentQIndex+1} of ${total}`;
@@ -804,8 +893,8 @@ function renderQuestion() {
   document.getElementById('next-btn').style.display = 'none';
 
   document.getElementById('question-card').innerHTML = `
-    <div class="q-subject-tag">📚 ${q.subject} › ${q.chapter}</div>
-    <div>${q.q}</div>
+    <div class="q-meta-row">${buildMetaPills(q)}</div>
+    <div class="q-text">${q.q}</div>
   `;
 
   const labels = ['A','B','C','D'];
@@ -820,27 +909,31 @@ function checkAnswer(chosen) {
   const q = currentQuizQuestions[currentQIndex];
   const isCorrect = chosen === q.ans;
 
-  // Disable all options
   document.querySelectorAll('.option-btn').forEach((btn, i) => {
     btn.disabled = true;
-    if (i === q.ans)   btn.classList.add('correct');
+    if (i === q.ans)              btn.classList.add('correct');
     if (i === chosen && !isCorrect) btn.classList.add('wrong');
   });
 
   const fb = document.getElementById('quiz-feedback');
   fb.className = 'quiz-feedback ' + (isCorrect ? 'correct' : 'wrong');
+
+  const extraInfo = [
+    q.exp               ? `<div class="fb-exp">💡 ${q.exp}</div>` : '',
+    q.learningObjective ? `<div class="fb-meta">🎯 <b>Learning Objective:</b> ${q.learningObjective}</div>` : '',
+    q.ncertReference    ? `<div class="fb-meta">📘 <b>NCERT Ref:</b> ${q.ncertReference}</div>` : ''
+  ].filter(Boolean).join('');
+
   if (isCorrect) {
     quizScore++;
-    fb.innerHTML = `✅ Correct! Great job! 🌟<br><small>💡 ${q.exp}</small>`;
+    fb.innerHTML = `<div class="fb-result">✅ Correct! Great job! 🌟</div>${extraInfo}`;
     showToast(getEncouragement(true));
   } else {
-    fb.innerHTML = `❌ Not quite! The answer was <b>${q.opts[q.ans]}</b>.<br><small>💡 ${q.exp}</small>`;
+    fb.innerHTML = `<div class="fb-result">❌ The answer was <b>${q.opts[q.ans]}</b></div>${extraInfo}`;
     showToast(getEncouragement(false));
   }
   fb.style.display = 'block';
   document.getElementById('next-btn').style.display = 'block';
-
-  // Update global progress
   updateProgress(q.subject, isCorrect);
 }
 
@@ -893,9 +986,9 @@ let dailyScore = 0;
 let dailyIndex = 0;
 
 function renderDailyQuestion() {
-  const q = currentQuizQuestions[dailyIndex];
+  const q     = currentQuizQuestions[dailyIndex];
   const total = currentQuizQuestions.length;
-  const pct = (dailyIndex / total) * 100;
+  const pct   = (dailyIndex / total) * 100;
 
   document.getElementById('dpf').style.width = pct + '%';
   document.getElementById('daily-counter').textContent = `Question ${dailyIndex+1} of ${total}`;
@@ -903,9 +996,11 @@ function renderDailyQuestion() {
   document.getElementById('daily-next-btn').style.display = 'none';
   document.getElementById('daily-result').style.display = 'none';
 
+  const metaPills = buildMetaPills(q);
+
   document.getElementById('daily-question-card').innerHTML = `
-    <div class="q-subject-tag">📚 ${q.subject}</div>
-    <div>${q.q}</div>
+    <div class="q-meta-row">${metaPills}</div>
+    <div class="q-text">${q.q}</div>
   `;
 
   const labels = ['A','B','C','D'];
@@ -922,17 +1017,24 @@ function checkDailyAnswer(chosen) {
 
   document.querySelectorAll('#daily-options-grid .option-btn').forEach((btn, i) => {
     btn.disabled = true;
-    if (i === q.ans)   btn.classList.add('correct');
+    if (i === q.ans)              btn.classList.add('correct');
     if (i === chosen && !isCorrect) btn.classList.add('wrong');
   });
 
   const fb = document.getElementById('daily-feedback');
   fb.className = 'quiz-feedback ' + (isCorrect ? 'correct' : 'wrong');
+
+  const extraInfo = [
+    q.exp               ? `<div class="fb-exp">💡 ${q.exp}</div>` : '',
+    q.learningObjective ? `<div class="fb-meta">🎯 <b>Learning Objective:</b> ${q.learningObjective}</div>` : '',
+    q.ncertReference    ? `<div class="fb-meta">📘 <b>NCERT Ref:</b> ${q.ncertReference}</div>` : ''
+  ].filter(Boolean).join('');
+
   if (isCorrect) {
     dailyScore++;
-    fb.innerHTML = `✅ Correct! 🌟<br><small>💡 ${q.exp}</small>`;
+    fb.innerHTML = `<div class="fb-result">✅ Correct! 🌟</div>${extraInfo}`;
   } else {
-    fb.innerHTML = `❌ The answer was <b>${q.opts[q.ans]}</b>.<br><small>💡 ${q.exp}</small>`;
+    fb.innerHTML = `<div class="fb-result">❌ Answer: <b>${q.opts[q.ans]}</b></div>${extraInfo}`;
   }
   fb.style.display = 'block';
   document.getElementById('daily-next-btn').style.display = 'block';
@@ -1206,103 +1308,113 @@ function showToast(msg) {
 
 const CSV_STORAGE_KEY = 'studyBuddy_csvBanks';
 
-// Load all saved CSV banks from localStorage
+// Full column spec — all supported fields from the extended schema
+const CSV_COLUMNS = {
+  required: ['question','option_a','option_b','option_c','option_d','correct_answer'],
+  optional: ['question_id','class','subject','chapter','topic','difficulty',
+             'question_type','explanation','learning_objective','ncert_reference']
+};
+
+// Difficulty display helpers
+const DIFF_COLOR  = { easy:'#10b981', medium:'#f59e0b', hard:'#ef4444' };
+const DIFF_EMOJI  = { easy:'🟢', medium:'🟡', hard:'🔴' };
+const QTYPE_EMOJI = { mcq:'📝', 'true/false':'✅', fillblank:'✏️', short:'📄' };
+
+function diffBadge(d) {
+  if (!d) return '';
+  const key = d.toLowerCase();
+  const col = DIFF_COLOR[key] || '#6b7280';
+  const em  = DIFF_EMOJI[key] || '⚪';
+  return `<span class="meta-badge" style="background:${col}20;color:${col};border-color:${col}40">${em} ${d}</span>`;
+}
+function typeBadge(t) {
+  if (!t) return '';
+  const em = QTYPE_EMOJI[t.toLowerCase()] || '📋';
+  return `<span class="meta-badge meta-type">${em} ${t}</span>`;
+}
+
+// ---- Storage ----
 function loadAllCsvBanks() {
-  try {
-    return JSON.parse(localStorage.getItem(CSV_STORAGE_KEY) || '[]');
-  } catch { return []; }
+  try { return JSON.parse(localStorage.getItem(CSV_STORAGE_KEY) || '[]'); }
+  catch { return []; }
 }
-
-// Save all CSV banks back to localStorage
 function saveAllCsvBanks(banks) {
-  try {
-    localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify(banks));
-  } catch(e) {
-    showToast('⚠️ Storage full! Try removing an older bank first.');
-  }
+  try { localStorage.setItem(CSV_STORAGE_KEY, JSON.stringify(banks)); }
+  catch { showToast('⚠️ Storage full! Remove an older bank first.'); }
 }
 
-// Drag-over handler
+// ---- Drag / Drop / File ----
 function csvDragOver(e) {
   e.preventDefault();
   document.getElementById('csv-drop-zone').style.borderColor = '#4f46e5';
 }
-
-// Drop handler
 function csvDrop(e) {
   e.preventDefault();
   document.getElementById('csv-drop-zone').style.borderColor = '';
   const file = e.dataTransfer?.files?.[0];
   if (file) processCsvFile(file);
 }
-
-// Input change handler
 function handleCsvFile(e) {
   const file = e.target.files?.[0];
   if (file) processCsvFile(file);
-  e.target.value = ''; // reset so same file can be re-uploaded
+  e.target.value = '';
 }
 
-// Parse and preview CSV
 function processCsvFile(file) {
-  if (!file.name.endsWith('.csv')) {
-    showToast('⚠️ Please upload a .csv file!');
-    return;
-  }
+  if (!file.name.endsWith('.csv')) { showToast('⚠️ Please upload a .csv file!'); return; }
   const reader = new FileReader();
-  reader.onload = (e) => {
-    const text = e.target.result;
-    const result = parseCSV(text);
-    if (result.errors.length && result.questions.length === 0) {
-      showCsvError(result.errors);
-      return;
-    }
+  reader.onload = e => {
+    const result = parseCSV(e.target.result);
+    if (result.errors.length && result.questions.length === 0) { showCsvError(result.errors); return; }
     showCsvPreview(file.name, result);
   };
   reader.readAsText(file);
 }
 
-// Parse CSV text into question objects
+// ---- CSV Parser (extended schema) ----
 function parseCSV(text) {
   const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return { questions: [], errors: ['CSV file is empty or has no data rows.'] };
+  if (lines.length < 2) return { questions:[], errors:['CSV is empty or has no data rows.'] };
 
-  // Parse header (handle quoted headers too)
-  const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase().trim().replace(/\s+/g,'_'));
+  const headers = parseCsvRow(lines[0]).map(h => h.toLowerCase().trim().replace(/[\s-]+/g,'_'));
+  const missing  = CSV_COLUMNS.required.filter(r => !headers.includes(r));
+  if (missing.length) return { questions:[], errors:[`Missing required columns: ${missing.join(', ')}`] };
 
-  const required = ['question','option_a','option_b','option_c','option_d','correct_answer'];
-  const missing = required.filter(r => !headers.includes(r));
-  if (missing.length) {
-    return { questions: [], errors: [`Missing required columns: ${missing.join(', ')}`] };
-  }
-
-  const questions = [];
-  const errors = [];
-  const ansMap = { 'a':0, 'b':1, 'c':2, 'd':3 };
+  const questions = [], errors = [];
+  const ansMap = { a:0, b:1, c:2, d:3 };
 
   for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
     const cols = parseCsvRow(lines[i]);
-    const row = {};
+    const row  = {};
     headers.forEach((h, idx) => row[h] = (cols[idx] || '').trim());
 
-    if (!row.question) { errors.push(`Row ${i+1}: Empty question skipped.`); continue; }
-    const ansKey = row.correct_answer.toLowerCase().replace(/[^a-d]/g,'');
-    if (!(ansKey in ansMap)) { errors.push(`Row ${i+1}: correct_answer must be A/B/C/D — got "${row.correct_answer}"`); continue; }
+    if (!row.question) { errors.push(`Row ${i+1}: empty question — skipped.`); continue; }
+    const ansKey = row.correct_answer.toLowerCase().replace(/[^a-d]/g, '');
+    if (!(ansKey in ansMap)) { errors.push(`Row ${i+1}: correct_answer "${row.correct_answer}" must be A/B/C/D.`); continue; }
 
     questions.push({
-      q:       row.question,
-      opts:    [row.option_a, row.option_b, row.option_c, row.option_d],
-      ans:     ansMap[ansKey],
-      exp:     row.explanation || row.exp || '💡 See your textbook for more details.',
-      subject: row.subject || 'Custom',
-      chapter: row.chapter || row.topic || 'General'
+      // Core quiz fields
+      q:          row.question,
+      opts:       [row.option_a, row.option_b, row.option_c, row.option_d],
+      ans:        ansMap[ansKey],
+      exp:        row.explanation || '💡 See your textbook for more details.',
+      subject:    row.subject    || 'Custom',
+      chapter:    row.chapter    || 'General',
+      // Extended metadata fields — stored as-is for display & filtering
+      questionId: row.question_id       || '',
+      classLevel: row.class             || '',
+      topic:      row.topic             || '',
+      difficulty: row.difficulty        || '',
+      questionType: row.question_type   || 'MCQ',
+      learningObjective: row.learning_objective || '',
+      ncertReference:    row.ncert_reference    || ''
     });
   }
   return { questions, errors };
 }
 
-// Minimal CSV row parser that handles quoted fields
+// Minimal quoted-CSV row parser
 function parseCsvRow(line) {
   const result = [];
   let cur = '', inQuote = false;
@@ -1316,25 +1428,33 @@ function parseCsvRow(line) {
   return result;
 }
 
-// Show preview before saving
+// ---- Preview ----
 function showCsvPreview(filename, result) {
   const area = document.getElementById('csv-preview-area');
   const { questions, errors } = result;
 
-  const subjects = [...new Set(questions.map(q => q.subject))];
-  const chapters = [...new Set(questions.map(q => q.chapter))];
+  // Summary stats
+  const subjects    = [...new Set(questions.map(q => q.subject))];
+  const classes     = [...new Set(questions.map(q => q.classLevel).filter(Boolean))];
+  const diffs       = [...new Set(questions.map(q => q.difficulty).filter(Boolean))];
+  const easy   = questions.filter(q => q.difficulty?.toLowerCase() === 'easy').length;
+  const medium = questions.filter(q => q.difficulty?.toLowerCase() === 'medium').length;
+  const hard   = questions.filter(q => q.difficulty?.toLowerCase() === 'hard').length;
 
   const errHtml = errors.length
-    ? `<div class="csv-warn">⚠️ ${errors.length} row(s) had issues and were skipped:<br><small>${errors.slice(0,5).join('<br>')}</small></div>`
-    : '';
+    ? `<div class="csv-warn">⚠️ ${errors.length} row(s) skipped:<br><small>${errors.slice(0,5).join('<br>')}${errors.length>5?`<br>…and ${errors.length-5} more`:''}` +
+      `</small></div>` : '';
 
-  const previewRows = questions.slice(0, 5).map((q, i) => `
+  const previewRows = questions.slice(0, 8).map((q, i) => `
     <tr>
-      <td>${i+1}</td>
-      <td>${q.q.slice(0,60)}${q.q.length>60?'…':''}</td>
+      <td>${q.questionId || i+1}</td>
+      <td title="${q.q}">${q.q.slice(0,55)}${q.q.length>55?'…':''}</td>
       <td>${q.opts[q.ans]}</td>
       <td><span class="subj-tag">${q.subject}</span></td>
       <td>${q.chapter}</td>
+      <td>${q.topic || '—'}</td>
+      <td>${diffBadge(q.difficulty) || '—'}</td>
+      <td>${typeBadge(q.questionType) || '—'}</td>
     </tr>`).join('');
 
   area.innerHTML = `
@@ -1343,14 +1463,18 @@ function showCsvPreview(filename, result) {
         <span>📄 <b>${filename}</b></span>
         <span class="csv-stat">✅ ${questions.length} questions</span>
         <span class="csv-stat">📚 ${subjects.join(', ')}</span>
+        ${classes.length ? `<span class="csv-stat">🎓 Class ${classes.join(', ')}</span>` : ''}
+        ${easy   ? `<span class="csv-stat" style="color:#10b981">🟢 ${easy} Easy</span>`   : ''}
+        ${medium ? `<span class="csv-stat" style="color:#f59e0b">🟡 ${medium} Medium</span>` : ''}
+        ${hard   ? `<span class="csv-stat" style="color:#ef4444">🔴 ${hard} Hard</span>`   : ''}
       </div>
       ${errHtml}
       <div class="csv-table-wrap">
         <table class="csv-preview-table">
-          <thead><tr><th>#</th><th>Question</th><th>Correct Answer</th><th>Subject</th><th>Chapter</th></tr></thead>
+          <thead><tr><th>ID</th><th>Question</th><th>Answer</th><th>Subject</th><th>Chapter</th><th>Topic</th><th>Difficulty</th><th>Type</th></tr></thead>
           <tbody>${previewRows}</tbody>
         </table>
-        ${questions.length > 5 ? `<div class="csv-more">…and ${questions.length - 5} more questions</div>` : ''}
+        ${questions.length > 8 ? `<div class="csv-more">…and ${questions.length - 8} more questions</div>` : ''}
       </div>
       ${questions.length > 0 ? `
         <div class="csv-preview-actions">
@@ -1361,8 +1485,7 @@ function showCsvPreview(filename, result) {
         </div>` : ''}
     </div>`;
 
-  // Store pending parsed questions temporarily
-  window._pendingCsvData = result.questions;
+  window._pendingCsvData = questions;
 }
 
 function showCsvError(errors) {
@@ -1370,41 +1493,58 @@ function showCsvError(errors) {
     <div class="csv-preview-card">
       <div class="csv-preview-header"><span>❌ Could not parse CSV</span></div>
       <div class="csv-warn">${errors.join('<br>')}</div>
-      <p style="font-size:13px;color:#6b7280;margin-top:8px">Please check your column headers match the format shown above.</p>
+      <p style="font-size:13px;color:#6b7280;margin-top:8px">
+        Required columns: <b>question, option_a, option_b, option_c, option_d, correct_answer</b>
+      </p>
     </div>`;
 }
 
-// Save bank to localStorage
+// ---- Save ----
 function saveCsvBank(filename) {
   const questions = window._pendingCsvData;
-  if (!questions || questions.length === 0) return;
-  const name = document.getElementById('csv-bank-name')?.value?.trim() || filename;
+  if (!questions?.length) return;
+  const name  = document.getElementById('csv-bank-name')?.value?.trim() || filename;
   const banks = loadAllCsvBanks();
-  const id = 'bank_' + Date.now();
-  banks.push({ id, name, filename, questions, addedAt: new Date().toISOString() });
+  const id    = 'bank_' + Date.now();
+  // Store a summary alongside the questions for quick display
+  const summary = {
+    subjects:    [...new Set(questions.map(q => q.subject))],
+    classes:     [...new Set(questions.map(q => q.classLevel).filter(Boolean))],
+    easy:   questions.filter(q => q.difficulty?.toLowerCase()==='easy').length,
+    medium: questions.filter(q => q.difficulty?.toLowerCase()==='medium').length,
+    hard:   questions.filter(q => q.difficulty?.toLowerCase()==='hard').length,
+    types:  [...new Set(questions.map(q => q.questionType).filter(Boolean))]
+  };
+  banks.push({ id, name, filename, questions, summary, addedAt: new Date().toISOString() });
   saveAllCsvBanks(banks);
   window._pendingCsvData = null;
   document.getElementById('csv-preview-area').innerHTML = '';
   showToast(`✅ "${name}" saved! ${questions.length} questions added.`);
   renderCsvBanksList();
-  // Refresh quiz subject tabs in case new subjects were added
   renderSubjectTabs('quiz-subject-tabs', selectedSubject, 'selectSubject', true);
 }
 
-// Render saved banks list
+// ---- Banks List ----
 function renderCsvBanksList() {
-  const banks = loadAllCsvBanks();
+  const banks     = loadAllCsvBanks();
   const container = document.getElementById('csv-banks-list');
   if (!container) return;
 
-  if (banks.length === 0) {
+  if (!banks.length) {
     container.innerHTML = `<div class="csv-empty">No question banks uploaded yet. Upload a CSV above to get started! 📂</div>`;
     return;
   }
 
   container.innerHTML = banks.map(bank => {
-    const subjects = [...new Set(bank.questions.map(q => q.subject))];
+    const s   = bank.summary || {};
+    const subj = s.subjects?.join(', ') || [...new Set(bank.questions.map(q=>q.subject))].join(', ');
     const date = new Date(bank.addedAt).toLocaleDateString('en-IN');
+    const diffPills = [
+      s.easy   ? `<span style="color:#10b981;font-weight:800">🟢 ${s.easy}</span>`   : '',
+      s.medium ? `<span style="color:#f59e0b;font-weight:800">🟡 ${s.medium}</span>` : '',
+      s.hard   ? `<span style="color:#ef4444;font-weight:800">🔴 ${s.hard}</span>`   : ''
+    ].filter(Boolean).join(' ');
+
     return `
       <div class="csv-bank-item" id="bankcard-${bank.id}">
         <div class="csv-bank-info">
@@ -1412,7 +1552,9 @@ function renderCsvBanksList() {
           <div class="csv-bank-meta">
             <span>📄 ${bank.filename}</span>
             <span>✅ ${bank.questions.length} questions</span>
-            <span>📘 ${subjects.join(', ')}</span>
+            <span>📘 ${subj}</span>
+            ${s.classes?.length ? `<span>🎓 Class ${s.classes.join(', ')}</span>` : ''}
+            ${diffPills ? `<span>${diffPills}</span>` : ''}
             <span>🗓️ ${date}</span>
           </div>
         </div>
@@ -1425,16 +1567,20 @@ function renderCsvBanksList() {
 }
 
 function previewBankQuestions(bankId) {
-  const banks = loadAllCsvBanks();
-  const bank = banks.find(b => b.id === bankId);
+  const bank = loadAllCsvBanks().find(b => b.id === bankId);
   if (!bank) return;
-  const rows = bank.questions.slice(0, 10).map((q, i) => `
+
+  const rows = bank.questions.slice(0, 12).map((q, i) => `
     <tr>
-      <td>${i+1}</td>
-      <td>${q.q.slice(0,70)}${q.q.length>70?'…':''}</td>
+      <td>${q.questionId || i+1}</td>
+      <td title="${q.q}">${q.q.slice(0,55)}${q.q.length>55?'…':''}</td>
       <td>${q.opts[q.ans]}</td>
-      <td>${q.subject}</td>
+      <td><span class="subj-tag">${q.subject}</span></td>
       <td>${q.chapter}</td>
+      <td>${q.topic||'—'}</td>
+      <td>${diffBadge(q.difficulty)||'—'}</td>
+      <td>${typeBadge(q.questionType)||'—'}</td>
+      <td style="font-size:11px;color:#6b7280">${q.ncertReference||'—'}</td>
     </tr>`).join('');
 
   const el = document.getElementById('csv-preview-area');
@@ -1442,48 +1588,47 @@ function previewBankQuestions(bankId) {
     <div class="csv-preview-card">
       <div class="csv-preview-header">
         <b>👁️ Preview: ${bank.name}</b>
+        <span class="csv-stat">✅ ${bank.questions.length} total</span>
         <button class="key-change-btn" onclick="document.getElementById('csv-preview-area').innerHTML=''">✕ Close</button>
       </div>
       <div class="csv-table-wrap">
         <table class="csv-preview-table">
-          <thead><tr><th>#</th><th>Question</th><th>Answer</th><th>Subject</th><th>Chapter</th></tr></thead>
+          <thead><tr><th>ID</th><th>Question</th><th>Answer</th><th>Subject</th><th>Chapter</th><th>Topic</th><th>Difficulty</th><th>Type</th><th>NCERT Ref</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-        ${bank.questions.length > 10 ? `<div class="csv-more">…and ${bank.questions.length - 10} more</div>` : ''}
+        ${bank.questions.length > 12 ? `<div class="csv-more">…and ${bank.questions.length - 12} more</div>` : ''}
       </div>
     </div>`;
   el.scrollIntoView({ behavior: 'smooth' });
 }
 
 function deleteCsvBank(bankId) {
-  const banks = loadAllCsvBanks();
-  const bank = banks.find(b => b.id === bankId);
+  const bank = loadAllCsvBanks().find(b => b.id === bankId);
   if (!bank) return;
-  if (!confirm(`Delete "${bank.name}"? This will remove ${bank.questions.length} questions.`)) return;
-  const updated = banks.filter(b => b.id !== bankId);
-  saveAllCsvBanks(updated);
+  if (!confirm(`Delete "${bank.name}"? This removes ${bank.questions.length} questions.`)) return;
+  saveAllCsvBanks(loadAllCsvBanks().filter(b => b.id !== bankId));
   renderCsvBanksList();
   renderSubjectTabs('quiz-subject-tabs', selectedSubject, 'selectSubject', true);
   showToast(`🗑️ "${bank.name}" deleted.`);
 }
 
-// Download a sample CSV for reference
+// ---- Sample CSV download (full schema) ----
 function downloadSampleCsv() {
-  const header = 'question,option_a,option_b,option_c,option_d,correct_answer,explanation,subject,chapter';
+  const header = 'question_id,class,subject,chapter,topic,difficulty,question_type,question,option_a,option_b,option_c,option_d,correct_answer,explanation,learning_objective,ncert_reference';
   const rows = [
-    'What is 5 × 6?,25,30,35,40,B,5 multiplied by 6 equals 30,Math,Multiplication',
-    'Which planet is closest to the Sun?,Venus,Earth,Mercury,Mars,C,Mercury is the closest planet to the Sun,Science,Solar System',
-    'What is the plural of "child"?,Childs,Childes,Children,Childrens,C,Child is an irregular plural — it becomes Children,English,Grammar – Nouns',
-    'Who built the Taj Mahal?,Akbar,Aurangzeb,Shah Jahan,Babur,C,Shah Jahan built the Taj Mahal in memory of Mumtaz Mahal,SST,The Mughal Empire',
-    'What is the chemical formula for water?,CO2,H2O,O2,NaCl,B,Water is made of 2 Hydrogen and 1 Oxygen atom,Science,Acids Bases and Salts'
+    'Q001,7,Math,Integers,Addition of Integers,Easy,MCQ,What is (-5) + (-3)?,-8,8,-2,2,A,Negative + Negative = More Negative. So (-5)+(-3) = -8,Students can add negative integers,NCERT Class 7 Maths Ch 1',
+    'Q002,7,Science,Nutrition in Plants,Photosynthesis,Easy,MCQ,What gas do plants release during photosynthesis?,Carbon dioxide,Nitrogen,Oxygen,Hydrogen,C,Plants release Oxygen during photosynthesis using sunlight water and CO2,Students understand photosynthesis output,NCERT Class 7 Science Ch 1',
+    'Q003,7,English,Grammar – Nouns,Proper Nouns,Medium,MCQ,Which of these is a proper noun?,city,river,Delhi,mountain,C,Proper nouns name specific places people or things and are always capitalised,Students identify proper nouns,NCERT Class 7 English Grammar',
+    'Q004,7,SST,The Mughal Empire,Mughal Rulers,Medium,MCQ,Who built the Taj Mahal?,Akbar,Aurangzeb,Babur,Shah Jahan,D,Shah Jahan built the Taj Mahal in memory of his wife Mumtaz Mahal,Students recall Mughal rulers and monuments,NCERT Class 7 History Ch 4',
+    'Q005,7,Science,Acids Bases and Salts,Indicators,Hard,MCQ,What colour does blue litmus paper turn in an acid?,Blue,Red,Green,Yellow,B,Acids turn blue litmus paper red. Bases turn red litmus paper blue,Students apply knowledge of indicators,NCERT Class 7 Science Ch 5'
   ];
   const csv = [header, ...rows].join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'sample_questions.csv'; a.click();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'sample_questions_full.csv'; a.click();
   URL.revokeObjectURL(url);
-  showToast('📥 Sample CSV downloaded!');
+  showToast('📥 Sample CSV (full schema) downloaded!');
 }
 
 function showPage(id) {

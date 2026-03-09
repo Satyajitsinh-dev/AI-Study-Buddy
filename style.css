@@ -579,7 +579,91 @@ body {
 }
 .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
 
-/* ===================== RESPONSIVE ===================== */
+/* ===================== QUIZ FILTERS ===================== */
+.quiz-filters {
+  background: #f8f9ff; border: 2px solid #e0e7ff;
+  border-radius: var(--radius); padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.filter-row {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px;
+}
+.filter-row:last-child { margin-bottom: 0; }
+.filter-group {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.filter-label {
+  font-size: 12px; font-weight: 800; color: var(--clr-muted);
+  text-transform: uppercase; letter-spacing: .4px;
+}
+
+/* Count badge */
+.filter-count-badge { margin-top: 6px; }
+.filter-badge-ok {
+  display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: #d1fae5; color: #065f46; border-radius: 10px;
+  padding: 6px 14px; font-size: 13px; font-weight: 700;
+}
+.filter-badge-zero {
+  display: inline-block;
+  background: #fee2e2; color: #991b1b; border-radius: 10px;
+  padding: 6px 14px; font-size: 13px; font-weight: 700;
+}
+.diff-pill {
+  border-radius: 20px; padding: 2px 10px; font-size: 12px; font-weight: 800;
+}
+.diff-pill.easy   { background: #d1fae5; color: #065f46; }
+.diff-pill.medium { background: #fef9c3; color: #92400e; }
+.diff-pill.hard   { background: #fee2e2; color: #991b1b; }
+
+/* ===================== QUESTION METADATA PILLS ===================== */
+.q-meta-row {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;
+}
+.q-meta-pill {
+  border-radius: 8px; padding: 3px 10px; font-size: 11px; font-weight: 800;
+  border: 1px solid transparent;
+}
+.pill-class   { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+.pill-subject { background: #e0e7ff; color: #3730a3; border-color: #a5b4fc; }
+.pill-chapter { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+.pill-topic   { background: #e0f2fe; color: #075985; border-color: #7dd3fc; }
+.pill-type    { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+.q-text { font-size: 17px; font-weight: 700; line-height: 1.5; }
+
+/* ===================== FEEDBACK RICH DISPLAY ===================== */
+.fb-result {
+  font-size: 16px; font-weight: 800; margin-bottom: 10px;
+}
+.fb-exp {
+  font-size: 14px; line-height: 1.6; margin-bottom: 8px;
+  padding: 8px 12px; background: rgba(0,0,0,.04); border-radius: 8px;
+}
+.fb-meta {
+  font-size: 13px; color: inherit; opacity: .85;
+  padding: 4px 8px; margin-top: 4px;
+  border-left: 3px solid currentColor; padding-left: 10px;
+}
+
+/* ===================== CSV COL GROUPS ===================== */
+.csv-col-group { margin-bottom: 14px; }
+.csv-col-group-label {
+  font-size: 12px; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .5px; margin-bottom: 6px; padding: 3px 8px;
+  border-radius: 6px; display: inline-block;
+}
+.required-label { background: #fee2e2; color: #991b1b; }
+.optional-label { background: #d1fae5; color: #065f46; }
+
+/* Meta badge in CSV preview */
+.meta-badge {
+  display: inline-block; border-radius: 6px; padding: 2px 8px;
+  font-size: 11px; font-weight: 800; border: 1px solid transparent;
+  margin: 1px;
+}
+.meta-type { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+
+
 @media (max-width: 600px) {
   .topbar { padding: 10px 14px; }
   .logo-text { font-size: 16px; }

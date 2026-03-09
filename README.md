@@ -87,50 +87,78 @@ The app still works in **offline mode** using a built-in knowledge base covering
 
 ## 📂 Question Bank Manager (CSV Upload)
 
-You can add unlimited custom questions by uploading CSV files.
+You can add unlimited custom questions by uploading CSV files. All 16 columns are fully supported and actively used throughout the app.
 
-### CSV Format
+### Full CSV Column Schema
 
-Your CSV file must have these column headers (in any order):
-
-```
-question, option_a, option_b, option_c, option_d, correct_answer, explanation, subject, chapter
-```
-
-| Column | Required | Description |
+| Column | Required | Used For |
 |---|---|---|
-| `question` | ✅ Yes | The question text |
+| `question_id` | Optional | Unique ID shown in preview tables (e.g. Q001) |
+| `class` | Optional | Class filter in quiz setup (e.g. 7, 8) |
+| `subject` | Optional | Subject tabs — auto-creates new tab if new subject |
+| `chapter` | Optional | Chapter selection buttons |
+| `topic` | Optional | Topic filter dropdown; shown as blue pill on each question |
+| `difficulty` | Optional | Difficulty filter (Easy/Medium/Hard); colour-coded pill on each question |
+| `question_type` | Optional | Type filter (MCQ, True/False, Fill in the blank); shown as pill |
+| `question` | ✅ Yes | The question text shown to the student |
 | `option_a` | ✅ Yes | Choice A |
 | `option_b` | ✅ Yes | Choice B |
 | `option_c` | ✅ Yes | Choice C |
 | `option_d` | ✅ Yes | Choice D |
 | `correct_answer` | ✅ Yes | Must be **A**, **B**, **C**, or **D** |
-| `explanation` | Optional | Brief explanation shown after answering |
-| `subject` | Optional | Subject name (e.g. Math, Science, Hindi) |
-| `chapter` | Optional | Chapter name |
+| `explanation` | Optional | Shown in feedback after student answers |
+| `learning_objective` | Optional | Shown in feedback panel after answering |
+| `ncert_reference` | Optional | Shown in feedback panel and bank preview (e.g. NCERT Ch.1 Pg.4) |
 
-### Example CSV Content
+### How Each Field is Used in the App
+
+**On the Quiz Setup page:**
+- `subject` → generates subject tab buttons automatically
+- `chapter` → generates chapter selection buttons
+- `topic` → populates the Topic filter dropdown
+- `difficulty` → populates the Difficulty filter (Easy/Medium/Hard) with colour-coded live count
+- `class` → populates the Class filter dropdown
+- `question_type` → populates the Type filter dropdown
+
+**On the Question card (during quiz):**
+- `class` → purple badge "🎓 Class 7"
+- `subject` → blue badge "📚 Math"
+- `chapter` → yellow badge "📖 Integers"
+- `topic` → teal badge "🔖 Addition"
+- `difficulty` → colour-coded badge 🟢 Easy / 🟡 Medium / 🔴 Hard
+- `question_type` → grey badge if not MCQ
+
+**In the Feedback panel (after answering):**
+- `explanation` → "💡 explanation text"
+- `learning_objective` → "🎯 Learning Objective: …"
+- `ncert_reference` → "📘 NCERT Ref: …"
+
+**In the Question Bank Manager:**
+- `question_id` → shown as row ID in preview tables
+- `difficulty` → summary shown as 🟢 Easy / 🟡 Medium / 🔴 Hard counts per bank
+- `class` → shown in bank meta info "🎓 Class 7"
+
+### Example CSV Row (Full Schema)
 
 ```csv
-question,option_a,option_b,option_c,option_d,correct_answer,explanation,subject,chapter
-What is 5 × 6?,25,30,35,40,B,5 multiplied by 6 equals 30,Math,Multiplication
-Which planet is closest to the Sun?,Venus,Earth,Mercury,Mars,C,Mercury is the closest planet,Science,Solar System
-What is the plural of child?,Childs,Childes,Children,Childrens,C,Irregular plural — becomes Children,English,Grammar
+question_id,class,subject,chapter,topic,difficulty,question_type,question,option_a,option_b,option_c,option_d,correct_answer,explanation,learning_objective,ncert_reference
+Q001,7,Math,Integers,Addition of Integers,Easy,MCQ,What is (-5) + (-3)?,-8,8,-2,2,A,Negative + Negative = More Negative. So (-5)+(-3) = -8,Students can add negative integers,NCERT Class 7 Maths Ch 1
+Q002,7,Science,Nutrition in Plants,Photosynthesis,Easy,MCQ,What gas do plants release during photosynthesis?,Carbon dioxide,Nitrogen,Oxygen,Hydrogen,C,Plants release Oxygen during photosynthesis using sunlight water and CO2,Students understand photosynthesis output,NCERT Class 7 Science Ch 1
 ```
 
 ### How to Upload
 1. Click **📂 Question Bank** on the home screen
-2. Drag & drop your CSV file onto the upload area, or click to browse
-3. Preview your questions before saving
-4. Give the bank a name (e.g. "Science Term 2") and click **Save**
-5. New subjects and chapters appear automatically in all quiz modes!
+2. Drag & drop your CSV, or click to browse
+3. Preview shows: question count, subjects, class, Easy/Medium/Hard breakdown, first 8 rows with all metadata
+4. Name the bank (e.g. "Science Term 2") → click **Save**
+5. New subjects/chapters/topics appear automatically everywhere in the app!
 
 ### Tips
-- You can upload **multiple CSV files** — each becomes a separate named bank
-- Downloaded questions are saved in **browser localStorage** — they persist across sessions
-- Click **⬇️ Download Sample CSV** in the app to get a ready-to-fill template
-- Delete any bank at any time from the manager page
-- Subject names from your CSV (e.g. "Hindi", "Computer Science") automatically become new tabs in the quiz and daily practice screens
+- Click **⬇️ Download Sample CSV** in the app for a ready-to-fill template with all 16 columns
+- You can upload multiple banks — each is stored separately
+- Subject names from your CSV (e.g. "Hindi", "Computer Science") automatically become new tabs
+- All data saved in browser `localStorage` — persists across browser sessions
+- Delete any bank anytime from the manager page
 
 ---
 
