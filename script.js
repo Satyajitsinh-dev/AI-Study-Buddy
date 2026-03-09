@@ -680,39 +680,62 @@ function selectSubject(subj, btn) {
   selectedChapter = null;
   document.querySelectorAll('#quiz-subject-tabs .stab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  renderQuizChapters();
+  // Hide filters & start row first — renderQuizChapters will re-show them if needed
+  document.getElementById('quiz-filters').style.display = 'none';
   document.getElementById('quiz-start-row').style.display = 'none';
+  renderQuizChapters();
 }
 
 function renderQuizChapters() {
   const grid = document.getElementById('chapter-grid');
+
   if (selectedSubject === '__all__') {
+    // Auto-select "All Chapters" and show everything immediately
     selectedChapter = '__all__';
-    grid.innerHTML = `<button class="chap-btn selected">All Chapters</button>`;
+    grid.innerHTML = `<button class="chap-btn selected" style="cursor:default">🌈 All Chapters</button>`;
+    document.getElementById('selected-info').textContent = '📚 All Subjects — Mixed Questions';
     populateFilterDropdowns();
     document.getElementById('quiz-filters').style.display = 'block';
     document.getElementById('quiz-start-row').style.display = 'block';
-    document.getElementById('selected-info').textContent = '📚 All Subjects — Mixed Questions';
     updateFilterCountBadge();
     return;
   }
+
+  // Specific subject: render its chapters for the student to pick
   const chapters = getChaptersForSubject(selectedSubject);
-  grid.innerHTML = chapters.map(ch =>
-    `<button class="chap-btn" onclick="selectChapter('${ch.replace(/'/g,"\\'")}', this)">${ch}</button>`
-  ).join('');
+
+  // If subject only has one chapter, auto-select it
+  if (chapters.length === 1) {
+    selectedChapter = chapters[0];
+    grid.innerHTML = `<button class="chap-btn selected" style="cursor:default">${chapters[0]}</button>`;
+    document.getElementById('selected-info').textContent = `📚 ${selectedSubject} › ${chapters[0]}`;
+    populateFilterDropdowns();
+    document.getElementById('quiz-filters').style.display = 'block';
+    document.getElementById('quiz-start-row').style.display = 'block';
+    updateFilterCountBadge();
+    return;
+  }
+
+  // Multiple chapters: render buttons, add an "All Chapters" option at the top
+  grid.innerHTML =
+    `<button class="chap-btn" onclick="selectChapter('All Chapters', this)">📚 All Chapters</button>` +
+    chapters.map(ch =>
+      `<button class="chap-btn" onclick="selectChapter('${ch.replace(/'/g,"\\'")}', this)">${ch}</button>`
+    ).join('');
 }
 
 function selectChapter(ch, btn) {
   selectedChapter = ch;
   document.querySelectorAll('.chap-btn').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
+  const isAll = ch === '__all__' || ch === 'All Chapters';
+  const label = isAll
+    ? `📚 ${selectedSubject} — All Chapters`
+    : `📚 ${selectedSubject} › ${ch}`;
+  document.getElementById('selected-info').textContent = label;
   populateFilterDropdowns();
   document.getElementById('quiz-filters').style.display = 'block';
   document.getElementById('quiz-start-row').style.display = 'block';
-  const label = ch === 'All Chapters'
-    ? `📚 ${selectedSubject === '__all__' ? 'All Subjects' : selectedSubject} — All Chapters`
-    : `📚 ${selectedSubject} › ${ch}`;
-  document.getElementById('selected-info').textContent = label;
   updateFilterCountBadge();
 }
 
@@ -721,9 +744,8 @@ function populateFilterDropdowns() {
   const allQ = getAllQuestions();
   let pool = allQ;
   if (selectedSubject !== '__all__') pool = pool.filter(q => q.subject === selectedSubject);
-  if (selectedChapter && selectedChapter !== '__all__' && selectedChapter !== 'All Chapters') {
-    pool = pool.filter(q => q.chapter === selectedChapter);
-  }
+  const isAllChap = !selectedChapter || selectedChapter === '__all__' || selectedChapter === 'All Chapters';
+  if (!isAllChap) pool = pool.filter(q => q.chapter === selectedChapter);
 
   // Topics
   const topics = [...new Set(pool.map(q => q.topic).filter(Boolean))].sort();
@@ -759,12 +781,17 @@ function populateFilterDropdowns() {
 
 // Get filtered pool using the four <select> dropdowns
 function getFilteredPool() {
-  const allQ       = getAllQuestions();
-  let pool         = allQ;
+  const allQ = getAllQuestions();
+  let pool   = allQ;
+
+  // Subject filter
   if (selectedSubject !== '__all__') pool = pool.filter(q => q.subject === selectedSubject);
-  if (selectedChapter && selectedChapter !== '__all__' && selectedChapter !== 'All Chapters') {
-    pool = pool.filter(q => q.chapter === selectedChapter);
-  }
+
+  // Chapter filter — skip if "All Chapters" or no chapter selected
+  const isAllChap = !selectedChapter || selectedChapter === '__all__' || selectedChapter === 'All Chapters';
+  if (!isAllChap) pool = pool.filter(q => q.chapter === selectedChapter);
+
+  // Dropdown filters
   const topic      = document.getElementById('filter-topic')?.value      || '';
   const difficulty = document.getElementById('filter-difficulty')?.value || '';
   const classLevel = document.getElementById('filter-class')?.value      || '';
@@ -811,19 +838,73 @@ function countBy(arr, fn) {
 
 function generateQuiz() {
   quizMode = 'chapter';
-  const count = parseInt(document.getElementById('quiz-count-select')?.value || '5');
-  const pool  = getFilteredPool();
+  const count     = parseInt(document.getElementById('quiz-count-select')?.value || '5');
+  const strictPool = getFilteredPool();   // questions matching all filters exactly
 
-  if (!pool.length) {
+  if (!strictPool.length) {
     showToast('⚠️ No questions match your filters! Try a broader selection.');
     return;
   }
-  currentQuizQuestions = shuffle(pool).slice(0, Math.min(count, pool.length));
+
+  let finalPool  = shuffle(strictPool);
+  let padded     = false;
+  let paddedFrom = '';
+
+  // If strict pool is smaller than requested count, pad with same-subject questions
+  if (finalPool.length < count) {
+    const allQ       = getAllQuestions();
+    const isAllChap  = !selectedChapter || selectedChapter === '__all__' || selectedChapter === 'All Chapters';
+    const isAllSubj  = selectedSubject === '__all__';
+
+    // Build padding pool: same subject, different chapter
+    let padPool = [];
+    if (!isAllSubj && !isAllChap) {
+      padPool = allQ.filter(q =>
+        q.subject === selectedSubject &&
+        q.chapter !== selectedChapter &&
+        !strictPool.includes(q)
+      );
+      paddedFrom = `other ${selectedSubject} chapters`;
+    } else if (!isAllSubj) {
+      padPool = allQ.filter(q => q.subject === selectedSubject && !strictPool.includes(q));
+      paddedFrom = `other ${selectedSubject} questions`;
+    }
+
+    if (padPool.length) {
+      finalPool = [...finalPool, ...shuffle(padPool)].slice(0, count);
+      padded = true;
+    } else {
+      // Last resort: any subject
+      finalPool = shuffle(allQ.filter(q => !strictPool.includes(q))).slice(0, count - finalPool.length);
+      finalPool = [...shuffle(strictPool), ...finalPool];
+      padded = true;
+      paddedFrom = 'other subjects';
+    }
+  } else {
+    finalPool = finalPool.slice(0, count);
+  }
+
+  currentQuizQuestions = finalPool;
   currentQIndex = 0;
   quizScore     = 0;
+
   document.getElementById('quiz-setup').style.display = 'none';
   document.getElementById('quiz-result').style.display = 'none';
   document.getElementById('quiz-play').style.display   = 'block';
+
+  // Show a notice if we had to pad
+  if (padded) {
+    const notice = document.createElement('div');
+    notice.className = 'quiz-pad-notice';
+    notice.innerHTML = `💡 Only <b>${strictPool.length}</b> questions found for this selection — added questions from ${paddedFrom} to reach <b>${currentQuizQuestions.length}</b>.`;
+    const playEl = document.getElementById('quiz-play');
+    const existing = playEl.querySelector('.quiz-pad-notice');
+    if (existing) existing.remove();
+    playEl.insertBefore(notice, playEl.firstChild);
+  } else {
+    document.querySelector('#quiz-play .quiz-pad-notice')?.remove();
+  }
+
   renderQuestion();
 }
 
@@ -1641,6 +1722,8 @@ function showPage(id) {
     document.getElementById('quiz-setup').style.display = 'block';
     document.getElementById('quiz-play').style.display = 'none';
     document.getElementById('quiz-result').style.display = 'none';
+    document.getElementById('quiz-filters').style.display = 'none';
+    document.getElementById('quiz-start-row').style.display = 'none';
     renderSubjectTabs('quiz-subject-tabs', selectedSubject, 'selectSubject', true);
     renderQuizChapters();
   }
