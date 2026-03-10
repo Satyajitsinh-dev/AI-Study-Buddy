@@ -1107,10 +1107,9 @@ function generateQuiz() {
   let paddedFrom = '';
 
   if (strictPool.length >= count) {
-    // Enough questions — pick randomly without repetition
-    finalPool = randomPick(strictPool, count);
+    finalPool = pickFromDeck(strictPool, count);
   } else {
-    // Not enough — use all strict questions + pad from wider pool
+    // Not enough in strict pool — use all of them + pad from wider pool
     const allQ      = getActiveQuestions();
     const isAllChap = !selectedChapter || selectedChapter === '__all__' || selectedChapter === 'All Chapters';
     const isAllSubj = selectedSubject === '__all__';
@@ -1123,18 +1122,17 @@ function generateQuiz() {
       padPool = allQ.filter(q => q.subject === selectedSubject && !strictPool.includes(q));
       paddedFrom = `other ${selectedSubject} questions`;
     }
-
     if (!padPool.length) {
       padPool = allQ.filter(q => !strictPool.includes(q));
       paddedFrom = 'other subjects';
     }
 
-    const needed  = count - strictPool.length;
-    finalPool = [...shuffle(strictPool), ...randomPick(padPool, needed)];
+    const needed = count - strictPool.length;
+    finalPool = shuffle([...pickFromDeck(strictPool, strictPool.length), ...pickFromDeck(padPool, needed)]);
     padded    = true;
   }
 
-  // Clear any cached shuffle data from previous quiz runs
+  // Strip any cached render state from previous runs
   finalPool.forEach(q => { delete q._shuffled; delete q._correctText; });
 
   currentQuizQuestions = finalPool;
@@ -1180,7 +1178,7 @@ function generateDailyPractice() {
     return;
   }
 
-  const picked = randomPick(pool, Math.min(20, pool.length));
+  const picked = pickFromDeck(pool, Math.min(20, pool.length));
   picked.forEach(q => { delete q._shuffled; delete q._correctText; });
 
   currentQuizQuestions = picked;
@@ -1624,51 +1622,68 @@ function resetProgress() {
 }
 
 // =====================================================
-// SECTION 14: HELPERS
+// SECTION 14: RANDOMISATION & HELPERS
 // =====================================================
 
-// Cryptographically seeded shuffle (uses crypto.getRandomValues when available)
+// Pure Fisher-Yates shuffle — returns a new shuffled array, never mutates input
 function shuffle(arr) {
   const a = [...arr];
-  const len = a.length;
-  // Use crypto.getRandomValues for better randomness if available
-  let randoms;
-  try {
-    randoms = new Uint32Array(len);
-    crypto.getRandomValues(randoms);
-  } catch(e) {
-    randoms = null;
-  }
-  for (let i = len - 1; i > 0; i--) {
-    const j = randoms
-      ? Math.floor((randoms[i] / 0x100000000) * (i + 1))
-      : Math.floor(Math.random() * (i + 1));
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a;
 }
 
-// Pick `n` random unique items from arr — uses crypto shuffle for true randomness
-function randomPick(arr, n) {
-  if (n >= arr.length) return shuffle(arr);
-  // Partial Fisher-Yates: stop after n swaps
-  const a = [...arr];
-  const len = a.length;
-  let randoms;
-  try {
-    randoms = new Uint32Array(n);
-    crypto.getRandomValues(randoms);
-  } catch(e) { randoms = null; }
-  const result = [];
-  for (let i = 0; i < n; i++) {
-    const remaining = len - i;
-    const j = i + (randoms
-      ? Math.floor((randoms[i] / 0x100000000) * remaining)
-      : Math.floor(Math.random() * remaining));
-    [a[i], a[j]] = [a[j], a[i]];
-    result.push(a[i]);
+// ── Deck / queue system ──────────────────────────────────────────────────────
+//
+// How it works:
+//   Each unique pool of questions (identified by a stable key) gets its own
+//   "deck" — a pre-shuffled queue of ALL questions in that pool.
+//   pickFromDeck() pops from the front of the deck.
+//   When the deck runs out it is re-shuffled from the full pool, BUT the last
+//   batch of questions is moved to the back so they are never immediately
+//   repeated.  This guarantees:
+//     • No duplicate questions within a single quiz.
+//     • Questions that appeared in quiz N don't appear again until the full
+//       pool has been exhausted (or only top-ups remain).
+//
+const _decks = {};   // { deckKey: { queue: [...questions] } }
+
+function _deckKey(pool) {
+  // Stable key: sorted unique question texts joined, so the same logical pool
+  // always maps to the same deck regardless of array order.
+  return pool.map(q => (q.q || '').slice(0, 40)).sort().join('|');
+}
+
+// Return n questions from the deck for this pool, guaranteed unique within the batch.
+function pickFromDeck(pool, n) {
+  if (!pool.length) return [];
+  n = Math.min(n, pool.length);
+
+  const key = _deckKey(pool);
+
+  // Initialise deck if it doesn't exist yet
+  if (!_decks[key]) {
+    _decks[key] = { queue: shuffle(pool), lastBatch: [] };
   }
-  return result;
+
+  const deck = _decks[key];
+
+  // If deck has fewer cards than needed, refill:
+  // shuffle the full pool, but push the lastBatch to the END so they appear
+  // last — preventing immediate repeats.
+  if (deck.queue.length < n) {
+    const lastIds  = new Set(deck.lastBatch.map(q => (q.q || '').slice(0, 40)));
+    const notLast  = pool.filter(q => !lastIds.has((q.q || '').slice(0, 40)));
+    const isLast   = pool.filter(q =>  lastIds.has((q.q || '').slice(0, 40)));
+    deck.queue     = [...shuffle(notLast), ...shuffle(isLast)];
+  }
+
+  // Pop n cards from the front
+  const picked = deck.queue.splice(0, n);
+  deck.lastBatch = picked;   // remember for next refill
+  return picked;
 }
 
 function getEncouragement(correct) {
