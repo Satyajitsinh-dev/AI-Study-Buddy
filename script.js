@@ -35,7 +35,12 @@ function getClassFilteredQuestions() {
   const cls = getActiveClass();
   const all = getAllQuestions();
   if (!cls) return all;
-  return all.filter(q => !q.classLevel || q.classLevel === String(cls));
+    return all.filter(q => {
+    if (!q.classLevel) return true;                         // no class tag → show everywhere
+    const qc  = String(q.classLevel).trim().replace(/^class\s*/i,'').replace(/[^\d]/g,'');
+    const act = String(cls).trim().replace(/^class\s*/i,'').replace(/[^\d]/g,'');
+    return qc === '' || qc === act;                         // empty normalises to "any class"
+  });
 }
 
 // Update all dynamic UI text that references the active class
@@ -191,7 +196,7 @@ const CHAPTERS = {
 /* Each question: { q, opts:[A,B,C,D], ans:0-3, exp, subject, chapter, topic, difficulty, classLevel }
    NOTE: opts are shuffled at render time — ans stores the CORRECT ANSWER TEXT, not an index */
 
-const QUESTION_BANK = [
+const QUESTION_BANK = [/*
 
   // ---- MATH: Integers ----
   { q:"What is (-5) + (-3)?", opts:["-8","8","-2","2"], ans:"-8", exp:"Negative + Negative = More Negative. (-5)+(-3) = -8 🎯", subject:"Math", chapter:"Integers", topic:"Addition of Integers", difficulty:"Easy", classLevel:"7" },
@@ -394,7 +399,7 @@ const QUESTION_BANK = [
   { q:"The Rashtrakutas were rulers of:", opts:["Deccan","Bengal","Punjab","Rajasthan"], ans:"Deccan", exp:"The Rashtrakutas were a powerful dynasty who ruled over the Deccan region of India! 🏯", subject:"SST", chapter:"New Kings and Kingdoms", topic:"Regional Kingdoms", difficulty:"Medium", classLevel:"7" },
   { q:"Samantas were:", opts:["Subordinate rulers who paid tribute","Priests","Merchants","Tax collectors"], ans:"Subordinate rulers who paid tribute", exp:"Samantas were subordinate kings who paid tribute and provided military service to more powerful kings! ⚔️", subject:"SST", chapter:"New Kings and Kingdoms", topic:"Political Structure", difficulty:"Hard", classLevel:"7" },
   { q:"Tripartite struggle was fought over control of:", opts:["Kannauj","Panipat","Delhi","Agra"], ans:"Kannauj", exp:"Three kingdoms – Gurjara-Pratiharas, Rashtrakutas and Palas – fought for control of Kannauj! 👑", subject:"SST", chapter:"New Kings and Kingdoms", topic:"Regional Kingdoms", difficulty:"Hard", classLevel:"7" },
-];
+*/];
 // SECTION 3: AI TUTOR KNOWLEDGE BASE (rule-based)
 // =====================================================
 
@@ -504,6 +509,10 @@ function updateHomeStats() {
   document.getElementById('hs-correct').textContent = progress.correct;
   const acc = progress.totalAttempts > 0 ? Math.round((progress.correct/progress.totalAttempts)*100) : 0;
   document.getElementById('hs-score').textContent = acc + '%';
+  // Live question count — updates whenever banks are added/removed
+  const qcount = getActiveQuestions().length;
+  const el = document.getElementById('hs-questions');
+  if (el) el.textContent = qcount;
 }
 
 // =====================================================
@@ -861,7 +870,16 @@ function removeTyping() {
 
 // Returns full question pool: built-in QUESTION_BANK + all saved CSV banks
 function getAllQuestions() {
-  const csvBanks = loadAllCsvBanks();
+  // Returns ALL question objects: built-in bank + every CSV bank.
+  // NO cross-bank deduplication by text — a question from a CSV bank
+  // is always included even if its text matches a built-in question.
+  // Deduplication for randomisation is handled separately via _id in
+  // the seen-set (pickQuestions), so there is no risk of true repetition
+  // within a single quiz session.
+  //
+  // Objects are returned BY REFERENCE so _id fields set by
+  // assignDefaultIds() / assignCsvIds() are preserved.
+  const csvBanks     = loadAllCsvBanks();
   const csvQuestions = csvBanks.flatMap(b => b.questions);
   return [...QUESTION_BANK, ...csvQuestions];
 }
@@ -1108,8 +1126,9 @@ function generateQuiz() {
   let padded     = false;
   let paddedFrom = '';
 
+  const quizScopeKey = makeScopeKey(selectedSubject, selectedChapter);
   if (strictPool.length >= count) {
-    finalPool = pickQuestions(strictPool, count);
+    finalPool = pickQuestions(strictPool, count, quizScopeKey);
   } else {
     // Not enough in strict pool — use all of them + pad from wider pool
     const allQ      = getActiveQuestions();
@@ -1130,7 +1149,8 @@ function generateQuiz() {
     }
 
     const needed = count - strictPool.length;
-    finalPool = shuffle([...pickQuestions(strictPool, strictPool.length), ...pickQuestions(padPool, needed)]);
+    const padScopeKey = makeScopeKey(selectedSubject, '__all__');
+    finalPool = shuffle([...pickQuestions(strictPool, strictPool.length, quizScopeKey), ...pickQuestions(padPool, needed, padScopeKey)]);
     padded    = true;
   }
 
@@ -1181,7 +1201,8 @@ function generateDailyPractice() {
     return;
   }
 
-  const picked = pickQuestions(pool, Math.min(20, pool.length));
+  const dailyScopeKey = makeScopeKey(dailySubjectFilter, '__all__');
+  const picked = pickQuestions(pool, Math.min(20, pool.length), dailyScopeKey);
   picked.forEach(q => { delete q._shuffled; delete q._correctText; });
 
   currentQuizQuestions = picked;
@@ -1519,7 +1540,7 @@ function generateExamContent() {
     let pool, sectionHTML = '';
 
     if (sec.type === 'mcq') {
-      pool = pickQuestions(allQ, sec.count);
+      pool = pickQuestions(allQ, sec.count, makeScopeKey('__all__', '__all__') + '::exam::' + sec.id);
       examQuestions[sec.id] = pool;
       sectionHTML = pool.map((q, i) => {
         const labels = ['A','B','C','D'];
@@ -2024,54 +2045,83 @@ function shuffle(arr) {
   return a;
 }
 
-// ── Session-level seen-set ──────────────────────────────────────────────────
-//
-// Single rule: never show the same question twice until every question
-// in that subject+chapter pool has been seen at least once.
-//
-// Keyed by subject+chapter (not pool size/contents) so filter changes
-// (difficulty, topic) don't accidentally create a new key and reset state.
-//
-// Algorithm (same as Khan Academy / Duolingo):
-//   1. Filter pool down to candidates = pool MINUS recently-seen questions.
-//   2. If candidates < n, reset seen set and use full pool.
-//   3. Shuffle candidates, take first n.
-//   4. Record picked questions as seen.
-//
-const _seen = {};   // { "subject::chapter" : Set of question texts }
+// ── Stable question IDs ──────────────────────────────────────────────────────
+// Every question object gets a _id assigned exactly once.
+// Default bank questions: "D-{index}"
+// CSV bank questions:     "C-{bankId}-{index}"  (or re-uses questionId if present)
+// This is the source of truth for dedup — never use q.q (text can collide,
+// is unstable across CSV edits, and is slow to compare for large banks).
 
-function _seenKey(pool) {
-  // Key is the LOGICAL scope (subject + chapter), NOT the pool contents.
-  // This stays stable even when difficulty/topic filters change pool size.
-  if (!pool.length) return '__empty__';
-  const s = pool[0].subject  || '__all__';
-  const c = pool[0].chapter  || '__all__';
-  return `${s}::${c}`;
+function assignDefaultIds() {
+  QUESTION_BANK.forEach((q, i) => {
+    if (!q._id) q._id = 'D-' + i;
+  });
 }
 
-function pickQuestions(pool, n) {
+function assignCsvIds(questions, bankId) {
+  questions.forEach((q, i) => {
+    if (!q._id) {
+      // Prefer questionId from CSV if unique-looking, else generate one
+      q._id = q.questionId ? ('C-' + bankId + '-' + q.questionId) : ('C-' + bankId + '-' + i);
+    }
+  });
+}
+
+// ── Scope-keyed seen-set ──────────────────────────────────────────────────────
+//
+// WHY SCOPE-KEYED (not pool-content-keyed)
+// ─────────────────────────────────────────
+// The previous approach hashed the pool's _id list to make a key.
+// This breaks when CSV is loaded: the pool grows, the hash changes,
+// a brand-new seen-set is created, and already-seen questions repeat.
+//
+// The fix: the seen-set key reflects what the USER SELECTED (subject +
+// chapter), not what happens to be in the pool at call time.
+//
+// ALGORITHM
+// ─────────
+//   1. Filter pool to questions not yet seen in this scope.
+//   2. If fewer candidates than requested → full rotation done, reset.
+//   3. Shuffle candidates, take first n, mark as seen.
+//
+const _seen = {};  // { scopeKey: Set<_id> }
+
+// Build a stable scope key from the user's current filter intent.
+function makeScopeKey(subject, chapter) {
+  const s = subject || '__all__';
+  const c = (!chapter || chapter === 'All Chapters' || chapter === '__all__') ? '__all__' : chapter;
+  return s + '::' + c;
+}
+
+// Pick n unique questions from pool.
+// scopeKey — pass makeScopeKey(selectedSubject, selectedChapter) from caller.
+function pickQuestions(pool, n, scopeKey) {
   if (!pool.length) return [];
   n = Math.min(n, pool.length);
 
-  const key = _seenKey(pool);
-  if (!_seen[key]) _seen[key] = new Set();
+  // Ensure _id exists (safety net for very old cached CSV without IDs)
+  pool.forEach((q, i) => { if (!q._id) q._id = 'U-' + i + '-' + (q.q || '').slice(0, 12); });
 
-  // Candidates = questions in this pool that haven't been seen yet
-  let candidates = pool.filter(q => !_seen[key].has(q.q));
+  // Fallback key if caller didn't provide one
+  if (!scopeKey) scopeKey = 'auto::' + pool.map(q => q._id).sort().slice(0, 10).join('|');
 
-  // If not enough unseen questions, reset and use the full pool
+  if (!_seen[scopeKey]) _seen[scopeKey] = new Set();
+
+  let candidates = pool.filter(q => !_seen[scopeKey].has(q._id));
+
   if (candidates.length < n) {
-    _seen[key] = new Set();
+    _seen[scopeKey] = new Set();
     candidates = [...pool];
   }
 
-  // Shuffle and take first n — guaranteed no repeats within one call
   const picked = shuffle(candidates).slice(0, n);
-
-  // Mark as seen
-  picked.forEach(q => _seen[key].add(q.q));
-
+  picked.forEach(q => _seen[scopeKey].add(q._id));
   return picked;
+}
+
+// Wipe all seen-sets. Call after CSV is added or removed.
+function clearSeenCache() {
+  Object.keys(_seen).forEach(k => delete _seen[k]);
 }
 
 
@@ -2263,6 +2313,14 @@ function showCsvPreview(filename, result) {
   const medium = questions.filter(q => q.difficulty?.toLowerCase() === 'medium').length;
   const hard   = questions.filter(q => q.difficulty?.toLowerCase() === 'hard').length;
 
+  // Warn if active class is set and none of the CSV questions match it
+  const _activeClass = getActiveClass();
+  const _csvClasses  = [...new Set(questions.map(q => q.classLevel).filter(Boolean))];
+  const _noMatch     = _activeClass && _csvClasses.length > 0
+    && questions.filter(q => !q.classLevel || String(q.classLevel).trim() === String(_activeClass).trim()).length === 0;
+  const classMismatchHtml = _noMatch
+    ? `<div class="csv-warn">⚠️ <b>Class mismatch:</b> These questions are for Class ${_csvClasses.join('/')} but you have Class ${_activeClass} selected. They will still be saved — switch class to use them in quizzes.</div>` : '';
+
   const errHtml = errors.length
     ? `<div class="csv-warn">⚠️ ${errors.length} row(s) skipped:<br><small>${errors.slice(0,5).join('<br>')}${errors.length>5?`<br>…and ${errors.length-5} more`:''}` +
       `</small></div>` : '';
@@ -2290,6 +2348,7 @@ function showCsvPreview(filename, result) {
         ${medium ? `<span class="csv-stat" style="color:#f59e0b">🟡 ${medium} Medium</span>` : ''}
         ${hard   ? `<span class="csv-stat" style="color:#ef4444">🔴 ${hard} Hard</span>`   : ''}
       </div>
+      ${classMismatchHtml}
       ${errHtml}
       <div class="csv-table-wrap">
         <table class="csv-preview-table">
@@ -2337,14 +2396,68 @@ function saveCsvBank(filename) {
     hard:   questions.filter(q => q.difficulty?.toLowerCase()==='hard').length,
     types:  [...new Set(questions.map(q => q.questionType).filter(Boolean))]
   };
+  // Assign stable IDs to new CSV questions immediately so rotation tracking
+  // works correctly from the first quiz after this bank is loaded.
+  assignCsvIds(questions, id);
+  // Wipe the seen-cache so any active rotation restarts cleanly with the
+  // enlarged pool (avoids stale keys referencing the pre-merge pool).
+  clearSeenCache();
   banks.push({ id, name, filename, questions, summary, addedAt: new Date().toISOString() });
   saveAllCsvBanks(banks);
   window._pendingCsvData = null;
   document.getElementById('csv-preview-area').innerHTML = '';
-  showToast(`✅ "${name}" saved! ${questions.length} questions added.`);
+
+  // ── Figure out how many new questions are actually accessible right now ──
+  const activeClass   = getActiveClass();
+  const csvClasses    = [...new Set(questions.map(q => q.classLevel).filter(Boolean))];
+  const visibleNow    = activeClass
+    ? questions.filter(q => !q.classLevel || String(q.classLevel) === String(activeClass)).length
+    : questions.length;
+
+  let toastMsg = `✅ "${name}" saved! ${questions.length} question${questions.length!==1?'s':''} added.`;
+
+  if (activeClass && visibleNow === 0 && csvClasses.length > 0) {
+    // All CSV questions belong to a different class — warn clearly
+    toastMsg = `✅ Saved! But these questions are for Class ${csvClasses.join('/')} — switch class to use them.`;
+    showToast(toastMsg);
+    // Show a persistent banner so the user doesn't miss it
+    const area = document.getElementById('csv-preview-area');
+    area.innerHTML = `<div class="csv-warn" style="margin-top:12px">
+      ℹ️ <b>${questions.length} questions</b> saved to bank "<b>${name}</b>" for
+      Class ${csvClasses.join(' / ')}.
+      You are currently on Class ${activeClass}.
+      <br><br>
+      <button class="big-btn btn-blue" style="font-size:13px;padding:8px 16px;"
+        onclick="selectClass('${csvClasses[0]}');showPage('page-quiz');document.getElementById('csv-preview-area').innerHTML=''">
+        Switch to Class ${csvClasses[0]} and go to Quiz →
+      </button>
+    </div>`;
+  } else {
+    showToast(toastMsg);
+  }
+
+  // ── Refresh all UI that shows question counts ──
   renderCsvBanksList();
-  renderClassDropdown(); // refresh dropdown in case new classes were added
+  renderClassDropdown();
+
+  // If the CSV introduced subjects not previously in the active pool,
+  // switch to "All Subjects" so the user immediately sees all questions.
+  const newSubjects = [...new Set(questions.map(q => q.subject).filter(Boolean))];
+  const existingSubjects = getAllSubjects();
+  const hasNewSubject = newSubjects.some(s => !existingSubjects.includes(s)) ||
+                        newSubjects.some(s => s !== selectedSubject);
+  if (hasNewSubject || newSubjects.length > 0) {
+    selectedSubject = '__all__';
+    selectedChapter = '__all__';
+  }
+
   renderSubjectTabs('quiz-subject-tabs', selectedSubject, 'selectSubject', true);
+  const quizPage = document.getElementById('page-quiz');
+  if (quizPage && quizPage.style.display !== 'none') {
+    renderQuizChapters();
+    updateFilterCountBadge();
+  }
+  updateHomeStats();
 }
 
 // ---- Banks List ----
@@ -2430,8 +2543,11 @@ function deleteCsvBank(bankId) {
   if (!bank) return;
   if (!confirm(`Delete "${bank.name}"? This removes ${bank.questions.length} questions.`)) return;
   saveAllCsvBanks(loadAllCsvBanks().filter(b => b.id !== bankId));
+  clearSeenCache(); // pool shrinks — wipe stale rotation state
   renderCsvBanksList();
+  renderClassDropdown();
   renderSubjectTabs('quiz-subject-tabs', selectedSubject, 'selectSubject', true);
+  updateHomeStats();
   showToast(`🗑️ "${bank.name}" deleted.`);
 }
 
@@ -2498,6 +2614,7 @@ function injectClassBanner(pageId) {
 }
 
 function init() {
+  assignDefaultIds();   // stamp D-{i} ids on built-in bank once at startup
   updateClassUI();
   updateNavScore();
   updateHomeStats();
