@@ -5062,12 +5062,26 @@ function previewBankQuestions(bankId) {
   el.scrollIntoView({ behavior: 'smooth' });
 }
 
+// Auto-clear the active class from localStorage if it no longer has any questions.
+// Called after any bank deletion so the nav label stays in sync with reality.
+function reconcileActiveClass() {
+  const cls = getActiveClass();
+  if (!cls) return;                          // nothing selected — nothing to reconcile
+  const available = getAllAvailableClasses();
+  if (!available.includes(String(cls))) {
+    localStorage.removeItem(CLASS_STORE_KEY); // class gone — clear it
+    updateClassUI();
+    renderClassDropdown();
+  }
+}
+
 function deleteCsvBank(bankId) {
   const bank = loadAllCsvBanks().find(b => b.id === bankId);
   if (!bank) return;
   if (!confirm(`Delete "${bank.name}"? This removes ${bank.questions.length} questions.`)) return;
   saveAllCsvBanks(loadAllCsvBanks().filter(b => b.id !== bankId));
   clearSeenCache(); // pool shrinks — wipe stale rotation state
+  reconcileActiveClass();   // clear active class if it no longer has questions
   renderCsvBanksList();
   renderClassDropdown();
   renderSubjectTabs('quiz-subject-tabs', selectedSubject, 'selectSubject', true);
