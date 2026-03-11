@@ -38,17 +38,25 @@
     <div class="hero-content">
       <div class="hero-mascot">🤖</div>
       <h1 class="hero-title">Hey there, Scholar! 👋</h1>
-      <p class="hero-sub" id="hero-sub-text">Your fun AI-powered study partner.<br>Let's learn, practice and ace those exams! 🚀</p>
+      <p class="hero-sub" id="hero-sub-text">Your fun AI-powered study partner for any class.<br>Load your question bank, practise and ace those exams! 🚀</p>
       <div class="hero-stats-row">
         <div class="hstat"><span id="hs-questions">0</span><small>Questions</small></div>
         <div class="hstat"><span id="hs-attempts">0</span><small>Attempts</small></div>
         <div class="hstat"><span id="hs-correct">0</span><small>Correct</small></div>
         <div class="hstat"><span id="hs-score">0%</span><small>Accuracy</small></div>
       </div>
+      <!-- Shown only when no questions are loaded -->
+      <div id="home-upload-nudge" class="home-upload-nudge" style="display:none">
+        <p>📂 No questions loaded yet!</p>
+        <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:8px">
+          <button onclick="loadSampleBank()" class="nudge-btn-primary">📦 Load 2368 Sample Questions</button>
+          <button onclick="showPage('page-csv')" class="nudge-btn-secondary">➕ Upload Your Own Question Bank</button>
+        </div>
+      </div>
     </div>
 
     <!-- Feature Cards -->
-    <div class="feature-grid">
+    <div class="feature-grid" style="margin-top:32px;">
       <button class="feat-card card-ai"    onclick="showPage('page-tutor')">
         <span class="feat-icon">💬</span>
         <span class="feat-title">Ask AI Tutor</span>
@@ -277,14 +285,85 @@
           <span>&#x2705; <b>correct_answer</b>: A, B, C or D</span>
           <span>&#x2705; <b>difficulty</b>: Easy / Medium / Hard</span>
           <span>&#x2705; <b>question_type</b>: MCQ / True/False / Fill in the blank</span>
-          <button class="csv-download-btn" onclick="downloadSampleCsv()">&#x2B07;&#xFE0F; Download Sample CSV</button>
         </div>
+        <div class="csv-sample-actions">
+          <button id="load-sample-btn" class="csv-sample-load-btn" onclick="loadSampleBank()">
+            📦 Load Sample Bank (2368 questions)
+          </button>
+          <button class="csv-sample-download-btn" onclick="downloadSampleCsv()" title="Download the sample CSV to customise or add more questions, then re-upload">
+            ⬇️ Download Sample CSV
+          </button>
+        </div>
+        <p class="csv-sample-hint">💡 <b>Load Sample Bank</b> adds 2368 Class 7 questions instantly — no upload needed. It appears as a named bank below and can be deleted any time. <b>Download Sample CSV</b> gives you the file to edit and re-upload with your own additions.</p>
       </div>
     </div>
     <div id="csv-preview-area"></div>
     <div class="csv-banks-section">
       <h3>&#x1F4DA; Saved Question Banks</h3>
       <div id="csv-banks-list"></div>
+    </div>
+
+    <!-- ===== EXAM QUESTION BANK ===== -->
+    <div class="csv-banks-section" style="margin-top:32px;">
+      <h3>✍️ Exam Question Bank <span class="exam-bank-badge">Short · Long · Essay</span></h3>
+      <p class="exam-bank-desc">Upload questions for Short Answer, Long Answer and Essay sections used in Mock, Term &amp; Annual exams. These are <b>open-ended questions without answers</b> — students write their own responses.</p>
+
+      <div class="csv-upload-card" style="margin-top:16px;">
+        <div class="csv-drop-zone" id="exam-csv-drop-zone"
+             onclick="document.getElementById('exam-csv-file-input').click()"
+             ondragover="csvDragOver(event)" ondrop="examCsvDrop(event)">
+          <div class="csv-drop-icon">✍️</div>
+          <div class="csv-drop-title">Click or Drag &amp; Drop Exam Questions CSV</div>
+          <div class="csv-drop-sub">Columns: type, question, subject, class &nbsp;|&nbsp; type = short / long / essay</div>
+          <input type="file" id="exam-csv-file-input" accept=".csv" style="display:none" onchange="handleExamCsvFile(event)" />
+        </div>
+
+        <div class="csv-format-box">
+          <div class="csv-format-title">📋 Exam CSV Column Reference</div>
+          <div class="csv-col-group">
+            <div class="csv-col-group-label required-label">✅ Required Columns</div>
+            <div class="csv-format-table-wrap">
+              <table class="csv-format-table">
+                <thead><tr><th>type</th><th>question</th></tr></thead>
+                <tbody><tr>
+                  <td>short</td>
+                  <td>Define photosynthesis and write its word equation.</td>
+                </tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="csv-col-group" style="margin-top:10px;">
+            <div class="csv-col-group-label optional-label">💡 Optional Columns</div>
+            <div class="csv-format-table-wrap">
+              <table class="csv-format-table">
+                <thead><tr><th>subject</th><th>class</th><th>chapter</th><th>marks</th></tr></thead>
+                <tbody><tr>
+                  <td>Science</td><td>7</td><td>Nutrition in Plants</td><td>2</td>
+                </tr></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="csv-format-notes" style="margin-top:12px;">
+            <span>✅ <b>type</b>: short / long / essay</span>
+            <span>✅ <b>class</b>: filters by active class (optional)</span>
+          </div>
+          <div class="csv-sample-actions">
+            <button id="load-sample-exam-btn" class="csv-sample-load-btn" onclick="loadSampleExamBank()">
+              📦 Load Sample Exam Questions (Class 7)
+            </button>
+            <button class="csv-sample-download-btn" onclick="downloadSampleExamCsv()" title="Download template with sample short/long/essay questions">
+              ⬇️ Download Exam CSV Template
+            </button>
+          </div>
+          <p class="csv-sample-hint">💡 <b>Load Sample</b> adds built-in Class 7 short, long &amp; essay questions instantly. <b>Download Template</b> gives you the CSV to fill with your own questions and re-upload.</p>
+        </div>
+      </div>
+
+      <div id="exam-csv-preview-area"></div>
+      <div style="margin-top:16px;">
+        <h4 style="color:var(--clr-primary);font-family:'Baloo 2',cursive;margin-bottom:10px;">📚 Saved Exam Banks</h4>
+        <div id="exam-banks-list"></div>
+      </div>
     </div>
   </section>
 
