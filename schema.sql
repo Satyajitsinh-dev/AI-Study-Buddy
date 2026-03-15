@@ -141,8 +141,10 @@ $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- INSTITUTES: admins can see/edit their own institute
 DROP POLICY IF EXISTS "institutes_select" ON institutes;
+-- Institutes are publicly readable — slug, name, colours are not private.
+-- Anonymous students need to read institute branding by slug.
 CREATE POLICY "institutes_select" ON institutes FOR SELECT
-  USING (id = get_my_institute_id());
+  USING (true);
 DROP POLICY IF EXISTS "institutes_update" ON institutes;
 CREATE POLICY "institutes_update" ON institutes FOR UPDATE
   USING (id = get_my_institute_id() AND get_my_role() = 'admin');
@@ -307,6 +309,28 @@ $$;
 -- This is safe because the function itself validates inputs and checks for duplicates.
 GRANT EXECUTE ON FUNCTION register_institute TO anon;
 GRANT EXECUTE ON FUNCTION register_institute TO authenticated;
+
+-- =====================================================
+-- PUBLIC HELPER: check if an institute has an active admin
+-- Called by anon (students) to determine if school setup
+-- is complete. SECURITY DEFINER bypasses RLS safely.
+-- =====================================================
+CREATE OR REPLACE FUNCTION institute_has_admin(p_institute_id uuid)
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM users
+    WHERE institute_id = p_institute_id
+      AND role = 'admin'
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION institute_has_admin TO anon;
+GRANT EXECUTE ON FUNCTION institute_has_admin TO authenticated;
 
 -- =====================================================
 -- After registration, the admin signs in via magic link.

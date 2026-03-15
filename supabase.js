@@ -79,6 +79,11 @@ function enqueueSync(op) {
 async function flushSyncQueue() {
   const client = sb();
   if (!client) return;
+  // Only logged-in users can sync — clear and ignore for anonymous visitors
+  if (!isLoggedIn()) {
+    saveSyncQueue([]);   // discard — anon results are kept in localStorage only
+    return;
+  }
   const q = getSyncQueue();
   if (!q.length) return;
 
@@ -108,9 +113,13 @@ async function flushSyncQueue() {
 function updateSyncBadge() {
   const badge = document.getElementById('sync-badge');
   if (!badge) return;
+  // Never show sync badge to anonymous users — they can't sync to Supabase
+  if (!isSupabaseEnabled() || !isLoggedIn()) {
+    badge.style.display = 'none';
+    return;
+  }
   const n = getSyncQueue().length;
   const online = navigator.onLine;
-  if (!isSupabaseEnabled()) { badge.style.display = 'none'; return; }
   badge.style.display = 'inline-flex';
   if (!online) {
     badge.textContent = t('offline_badge');
@@ -121,6 +130,8 @@ function updateSyncBadge() {
   } else {
     badge.textContent = t('sync_done');
     badge.className = 'sync-badge synced';
+    // Auto-hide the "synced" state after 3 seconds
+    setTimeout(() => { if (badge.className === 'sync-badge synced') badge.style.display = 'none'; }, 3000);
   }
 }
 
@@ -1080,10 +1091,10 @@ function getInstituteSlugFromUrl() {
 // Returns: 'ok' | 'not_found' | 'setup_pending'
 async function loadBrandingBySlug(slug) {
   const client = sb();
-  if (!client || !slug) return 'ok';   // no Supabase → pass through silently
+  if (!client || !slug) return 'ok';
 
   try {
-    // 1. Fetch the institute row
+    // Fetch the institute row — publicly readable (RLS: USING true)
     const { data: inst, error } = await client
       .from('institutes')
       .select('*')
@@ -1091,28 +1102,21 @@ async function loadBrandingBySlug(slug) {
       .single();
 
     if (error || !inst) {
-      // Slug does not exist in the database
       showInstituteSetupScreen('not_found', slug);
       return 'not_found';
     }
 
-    // 2. Check whether this institute has an admin user yet
-    const { data: admins } = await client
-      .from('users')
-      .select('id')
-      .eq('institute_id', inst.id)
-      .eq('role', 'admin')
-      .limit(1);
+    // Check if institute has been activated by an admin via the public RPC
+    // (anon cannot query users table directly due to RLS)
+    const { data: activated } = await client
+      .rpc('institute_has_admin', { p_institute_id: inst.id });
 
-    const hasAdmin = admins && admins.length > 0;
-
-    if (!hasAdmin) {
-      // Institute registered but admin never clicked the magic link
+    if (activated === false) {
       showInstituteSetupScreen('setup_pending', slug, inst.name);
       return 'setup_pending';
     }
 
-    // 3. All good — apply branding
+    // All good — apply branding
     localStorage.setItem(BRAND_KEY, JSON.stringify(inst));
     applyBranding(inst);
     localStorage.setItem('studyBuddy_instituteSlug', slug);
@@ -1121,7 +1125,9 @@ async function loadBrandingBySlug(slug) {
 
   } catch(e) {
     console.warn('Could not load branding for slug:', slug, e.message);
-    return 'ok';   // fail open — don't block if Supabase is unreachable
+    // Fail open — if the check errors (e.g. function doesn't exist yet),
+    // apply branding anyway rather than blocking all students
+    return 'ok';
   }
 }
 
