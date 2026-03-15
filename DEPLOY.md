@@ -95,7 +95,7 @@ Supabase provides the database, authentication, and file storage. It is complete
 - **Never copy the service_role key** — that one is secret
 
 ### 4. Add credentials to supabase.js
-Open `supabase.js` and fill in lines 12–13:
+Open `supabase.js` and fill in lines 14–15:
 
 ```javascript
 const SUPABASE_URL  = 'https://YOUR-PROJECT.supabase.co';
@@ -103,6 +103,26 @@ const SUPABASE_ANON = 'eyJ...your-anon-key...';
 ```
 
 Then commit and push. The app will now use Supabase for auth, branding, and data sync.
+
+### 4b. Configure email redirects (required — do this before registering any school)
+
+In the Supabase dashboard go to **Authentication → URL Configuration**:
+
+**Site URL** — set to:
+```
+https://YOUR-USERNAME.github.io/study-buddy/index.html
+```
+
+**Redirect URLs** — click **Add URL** and add both:
+```
+https://YOUR-USERNAME.github.io/study-buddy/index.html
+http://localhost:8080/index.html
+```
+
+Without this step, magic link emails are blocked or redirect to a blank Supabase page.
+
+**Where do magic link emails come from?**
+By default from `noreply@mail.supabase.io` — these sometimes go to spam. Tell school admins to check their spam folder immediately after registering. To send from your own domain, go to **Authentication → Email Templates → SMTP Settings** and configure your own SMTP provider (Gmail, SendGrid, Mailgun etc.).
 
 ### 5. Register your first school (self-service)
 

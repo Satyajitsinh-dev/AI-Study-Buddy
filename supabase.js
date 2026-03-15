@@ -6,7 +6,25 @@
    2. Go to Project Settings → API
    3. Copy your Project URL and anon/public key below
    4. Run the SQL schema in supabase/schema.sql
-   5. The app works fully offline without Supabase —
+
+   EMAIL / MAGIC LINK SETUP (required for registration):
+   5. Go to Authentication → URL Configuration in Supabase dashboard
+      - Set "Site URL" to your deployed app URL:
+          https://YOUR-USERNAME.github.io/study-buddy/index.html
+      - Under "Redirect URLs", click Add URL and add:
+          https://YOUR-USERNAME.github.io/study-buddy/index.html
+          http://localhost:8080/index.html   (for local dev)
+      Without this step, magic link emails will either not send
+      or redirect to a blank Supabase page instead of your app.
+
+   EMAIL SENDER (magic link emails come from):
+   6. By default emails come from: noreply@mail.supabase.io
+      They sometimes land in spam — ask admins to check spam folder.
+      To send from your own domain: Authentication → Email Templates
+      → SMTP Settings → add your own SMTP server (e.g. Gmail, SendGrid).
+
+   OFFLINE MODE:
+   7. The app works fully offline without Supabase —
       results sync automatically when you reconnect.
    ===================================================== */
 
@@ -749,25 +767,95 @@ function getInstituteSlugFromUrl() {
 }
 
 // Load branding for a given slug (public — no auth needed)
+// Returns: 'ok' | 'not_found' | 'setup_pending'
 async function loadBrandingBySlug(slug) {
   const client = sb();
-  if (!client || !slug) return;
+  if (!client || !slug) return 'ok';   // no Supabase → pass through silently
+
   try {
-    const { data, error } = await client
+    // 1. Fetch the institute row
+    const { data: inst, error } = await client
       .from('institutes')
       .select('*')
       .eq('slug', slug)
       .single();
-    if (data && !error) {
-      localStorage.setItem(BRAND_KEY, JSON.stringify(data));
-      applyBranding(data);
-      // Store the institute_id so offline-first results get tagged correctly
-      localStorage.setItem('studyBuddy_instituteSlug', slug);
-      localStorage.setItem('studyBuddy_instituteId', data.id);
+
+    if (error || !inst) {
+      // Slug does not exist in the database
+      showInstituteSetupScreen('not_found', slug);
+      return 'not_found';
     }
+
+    // 2. Check whether this institute has an admin user yet
+    const { data: admins } = await client
+      .from('users')
+      .select('id')
+      .eq('institute_id', inst.id)
+      .eq('role', 'admin')
+      .limit(1);
+
+    const hasAdmin = admins && admins.length > 0;
+
+    if (!hasAdmin) {
+      // Institute registered but admin never clicked the magic link
+      showInstituteSetupScreen('setup_pending', slug, inst.name);
+      return 'setup_pending';
+    }
+
+    // 3. All good — apply branding
+    localStorage.setItem(BRAND_KEY, JSON.stringify(inst));
+    applyBranding(inst);
+    localStorage.setItem('studyBuddy_instituteSlug', slug);
+    localStorage.setItem('studyBuddy_instituteId', inst.id);
+    return 'ok';
+
   } catch(e) {
     console.warn('Could not load branding for slug:', slug, e.message);
+    return 'ok';   // fail open — don't block if Supabase is unreachable
   }
+}
+
+// Full-screen blocking overlay shown when ?institute= slug has a problem
+function showInstituteSetupScreen(reason, slug, schoolName) {
+  // Remove any existing overlay
+  document.getElementById('institute-setup-screen')?.remove();
+
+  const isNotFound     = reason === 'not_found';
+  const title          = isNotFound
+    ? '🔍 School Not Found'
+    : '⏳ School Setup Incomplete';
+  const message        = isNotFound
+    ? `No school is registered with the URL <b>${slug}</b>.<br>The link may be incorrect or the school has not registered yet.`
+    : `<b>${schoolName || slug}</b> has been registered but the admin account has not been activated yet.<br><br>The school admin needs to check their email and click the magic link to complete setup.`;
+  const actionLabel    = isNotFound ? '🏫 Register This School' : '📧 Admin: Sign In to Activate';
+  const actionHref     = isNotFound
+    ? `register.html`
+    : `#`;
+  const actionOnclick  = isNotFound ? '' : `onclick="showPage('page-auth');document.getElementById('institute-setup-screen').remove();return false;"`;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'institute-setup-screen';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,10,40,.75);display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:36px 28px;max-width:440px;width:100%;text-align:center;box-shadow:0 8px 40px rgba(79,70,229,.35);">
+      <div style="font-size:52px;margin-bottom:14px;">${isNotFound ? '🏫' : '⚙️'}</div>
+      <h2 style="font-family:'Baloo 2',cursive;font-size:22px;font-weight:800;color:var(--clr-primary);margin-bottom:10px;">${title}</h2>
+      <p style="font-size:14px;color:#6b7280;line-height:1.7;margin-bottom:22px;">${message}</p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <a href="${actionHref}" ${actionOnclick}
+           style="display:block;padding:13px 20px;border-radius:12px;background:linear-gradient(135deg,var(--clr-primary),var(--clr-secondary));color:#fff;font-weight:800;font-size:15px;text-decoration:none;font-family:inherit;">
+          ${actionLabel}
+        </a>
+        <button onclick="document.getElementById('institute-setup-screen').remove();localStorage.removeItem('studyBuddy_instituteSlug');localStorage.removeItem('studyBuddy_instituteId');"
+                style="padding:12px 20px;border-radius:12px;border:2px solid #c7d2fe;background:#fff;color:var(--clr-primary);font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;">
+          👤 Continue as Individual
+        </button>
+      </div>
+      <p style="margin-top:14px;font-size:12px;color:#9ca3af;">
+        The app will work in individual mode — your data stays local.
+      </p>
+    </div>`;
+  document.body.appendChild(overlay);
 }
 
 /* =====================================================
@@ -803,6 +891,15 @@ async function registerInstitute(formData) {
 
   // Send magic link to the admin so they can sign in and claim the institute
   if (formData.admin_email && data.ok) {
+    // emailRedirectTo must be whitelisted in Supabase Dashboard:
+    // Authentication → URL Configuration → Redirect URLs → add:
+    //   https://YOUR-SITE/index.html
+    //   http://localhost:*/index.html   (for local dev)
+    const redirectTo = window.location.origin
+      + window.location.pathname.replace('register.html', 'index.html')
+      + '?institute=' + data.slug
+      + '&setup=1';
+
     await client.auth.signInWithOtp({
       email: formData.admin_email,
       options: {
@@ -811,11 +908,7 @@ async function registerInstitute(formData) {
           role:         'admin',
           name:         formData.admin_name || '',
         },
-        // Redirect back to the app with institute param after clicking the link
-        emailRedirectTo: window.location.origin
-          + window.location.pathname
-          + '?institute=' + data.slug
-          + '&setup=1',
+        emailRedirectTo: redirectTo,
       }
     });
   }
