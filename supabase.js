@@ -29,7 +29,7 @@
    ===================================================== */
 
 const SUPABASE_URL  = 'https://rgxtuyspvtfmbofbymrc.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJneHR1eXNwdnRmbWJvZmJ5bXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NDM0MzksImV4cCI6MjA4OTExOTQzOX0.VXjJXOsSdCkwVWZOs78AwkkXKw558soqw1foozbFZus';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJneHR1eXNwdnRmbWJvZmJ5bXJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1NjI4OTgsImV4cCI6MjA4OTEzODg5OH0.WT0d5P1_-o7gnE4AFZzNQGRJQIqD8Y8aQ3mDjYsVpQ8';
 
 // =====================================================
 // APP BASE URL — set this to your deployed app URL.
@@ -835,6 +835,23 @@ async function loadBrandingBySlug(slug) {
   }
 }
 
+// Silent version — applies branding if institute exists, never shows blocking overlay.
+// Used during magic link / setup landings so we don't block the admin.
+async function loadBrandingBySlugSilent(slug) {
+  const client = sb();
+  if (!client || !slug) return;
+  try {
+    const { data: inst } = await client
+      .from('institutes').select('*').eq('slug', slug).single();
+    if (inst) {
+      localStorage.setItem(BRAND_KEY, JSON.stringify(inst));
+      applyBranding(inst);
+      localStorage.setItem('studyBuddy_instituteSlug', slug);
+      localStorage.setItem('studyBuddy_instituteId', inst.id);
+    }
+  } catch(e) { /* silent */ }
+}
+
 // Full-screen blocking overlay shown when ?institute= slug has a problem
 function showInstituteSetupScreen(reason, slug, schoolName) {
   // Remove any existing overlay
@@ -976,10 +993,6 @@ async function finaliseAdminRegistration() {
     p_institute_id: instId
   });
 
-  if (data?.ok) {
-    showToast('🎉 Admin account activated! Welcome to your Admin Panel.');
-  }
-
   // Clean URL — remove token fragments and ?setup=1
   const clean = new URL(window.location.href);
   clean.searchParams.delete('setup');
@@ -988,21 +1001,160 @@ async function finaliseAdminRegistration() {
 
   // Reload profile so admin cards appear
   await onSignIn(session.user);
+
+  if (data?.ok) {
+    // Show the admin setup screen — must complete before students can use the link
+    showToast('🎉 Admin account activated!');
+    setTimeout(() => showAdminSetupWelcome(data.slug || instId), 600);
+  }
 }
 
-/* =====================================================
-   INIT — called from script.js init()
-   ===================================================== */
+// Shown to admin immediately after clicking magic link for the first time.
+// They must complete required setup before students can use the school link.
+function showAdminSetupWelcome(slugOrId) {
+  // Remove any existing overlay
+  document.getElementById('admin-setup-welcome')?.remove();
+
+  const slug = localStorage.getItem('studyBuddy_instituteSlug') || slugOrId || '';
+  const schoolUrl = slug
+    ? APP_BASE_URL + '?institute=' + slug
+    : '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'admin-setup-welcome';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(15,10,40,.8);display:flex;align-items:center;justify-content:center;padding:16px;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:36px 28px;max-width:480px;width:100%;box-shadow:0 8px 40px rgba(79,70,229,.35);overflow-y:auto;max-height:90vh;">
+      <div style="text-align:center;margin-bottom:20px;">
+        <div style="font-size:52px;margin-bottom:8px;">🎉</div>
+        <h2 style="font-family:'Baloo 2',cursive;font-size:22px;font-weight:800;color:var(--clr-primary);margin-bottom:6px;">
+          Welcome, Admin!
+        </h2>
+        <p style="font-size:13px;color:#6b7280;line-height:1.6;">
+          Your account is active. Complete these steps to go live.
+        </p>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+        <!-- Step 1 -->
+        <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:14px 16px;">
+          <div style="font-weight:800;font-size:14px;color:#065f46;margin-bottom:4px;">✅ Step 1 — Account Active</div>
+          <div style="font-size:12px;color:#047857;">You're signed in as admin. Your institute is registered.</div>
+        </div>
+
+        <!-- Step 2 -->
+        <div style="background:#eef2ff;border:1.5px solid #c7d2fe;border-radius:12px;padding:14px 16px;">
+          <div style="font-weight:800;font-size:14px;color:var(--clr-primary);margin-bottom:4px;">⚙️ Step 2 — Complete School Setup <span style="color:#ef4444;font-size:11px;font-weight:700;background:#fee2e2;border-radius:6px;padding:1px 7px;margin-left:4px;">Required</span></div>
+          <div style="font-size:12px;color:#4338ca;margin-bottom:10px;">Go to Admin Panel → set school name, colours, and upload your first question bank.</div>
+          <button onclick="document.getElementById('admin-setup-welcome').remove();if(typeof showPage==='function')showPage('page-admin');"
+                  style="background:var(--clr-primary);color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">
+            Open Admin Panel ⚙️
+          </button>
+        </div>
+
+        <!-- Step 3 -->
+        <div style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:12px;padding:14px 16px;">
+          <div style="font-weight:800;font-size:14px;color:#9a3412;margin-bottom:4px;">📂 Step 3 — Upload Question Bank</div>
+          <div style="font-size:12px;color:#c2410c;margin-bottom:10px;">Go to Question Bank → upload your CSV or load sample questions.</div>
+          <button onclick="document.getElementById('admin-setup-welcome').remove();if(typeof showPage==='function')showPage('page-csv');"
+                  style="background:#ea580c;color:#fff;border:none;border-radius:8px;padding:8px 18px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">
+            Open Question Bank 📂
+          </button>
+        </div>
+
+        <!-- Step 4 — share URL -->
+        ${schoolUrl ? `
+        <div style="background:#f0fdf4;border:1.5px solid #bbf7d0;border-radius:12px;padding:14px 16px;">
+          <div style="font-weight:800;font-size:14px;color:#065f46;margin-bottom:4px;">🔗 Step 4 — Share School URL</div>
+          <div style="font-size:12px;color:#047857;margin-bottom:8px;">Share this link with students and teachers:</div>
+          <div style="font-family:monospace;font-size:11px;background:#fff;border:1px solid #bbf7d0;border-radius:6px;padding:6px 10px;word-break:break-all;color:#065f46;margin-bottom:8px;">${schoolUrl}</div>
+          <button onclick="navigator.clipboard?.writeText('${schoolUrl}').then(()=>this.textContent='✅ Copied!').catch(()=>{})"
+                  style="background:#10b981;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">
+            📋 Copy URL
+          </button>
+        </div>` : ''}
+      </div>
+
+      <button onclick="document.getElementById('admin-setup-welcome').remove();revealSchoolUrl();"
+              style="width:100%;padding:12px;border-radius:10px;border:2px solid #c7d2fe;background:#fff;color:var(--clr-primary);font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;">
+        Continue to App →
+      </button>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+window.showAdminSetupWelcome = showAdminSetupWelcome;
+
+// Called when admin dismisses the setup welcome modal.
+// Shows a persistent URL banner in the app so admin can copy it anytime.
+function revealSchoolUrl() {
+  const slug = localStorage.getItem('studyBuddy_instituteSlug');
+  if (!slug) return;
+  const url = APP_BASE_URL + '?institute=' + slug;
+
+  // Remove any existing banner
+  document.getElementById('school-url-banner')?.remove();
+
+  const banner = document.createElement('div');
+  banner.id = 'school-url-banner';
+  banner.style.cssText = [
+    'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:8000;',
+    'background:linear-gradient(135deg,#065f46,#047857);color:#fff;',
+    'border-radius:14px;padding:14px 20px;max-width:520px;width:calc(100% - 32px);',
+    'box-shadow:0 4px 24px rgba(0,0,0,.25);display:flex;align-items:center;gap:12px;',
+    'font-family:\'Nunito\',sans-serif;'
+  ].join('');
+  banner.innerHTML = `
+    <div style="flex:1;min-width:0;">
+      <div style="font-size:12px;font-weight:700;opacity:.8;margin-bottom:2px;">🎉 Setup complete — your school URL is ready to share:</div>
+      <div style="font-family:monospace;font-size:12px;font-weight:700;word-break:break-all;background:rgba(255,255,255,.15);border-radius:6px;padding:4px 8px;">${url}</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;">
+      <button onclick="navigator.clipboard?.writeText('${url}').then(()=>this.textContent='✅ Copied!').catch(()=>{})"
+              style="background:#fff;color:#065f46;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;white-space:nowrap;">
+        📋 Copy
+      </button>
+      <button onclick="document.getElementById('school-url-banner').remove()"
+              style="background:rgba(255,255,255,.2);color:#fff;border:none;border-radius:8px;padding:6px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit;">
+        Dismiss
+      </button>
+    </div>`;
+  document.body.appendChild(banner);
+}
 async function initSupabase() {
   updateSyncBadge();
+
   // Apply cached branding immediately (offline-safe, zero flicker)
   const cached = getBrandCache();
   if (cached) applyBranding(cached);
-  // Load branding from URL param — works without login (for students)
-  const slug = getInstituteSlugFromUrl();
-  if (slug) await loadBrandingBySlug(slug);
-  // Auth — non-blocking; resolves roles and branding for logged-in users
+
+  // Detect if this is a magic link / setup landing BEFORE doing branding check
+  // so we don't show "School Not Found" while the session is still being established
+  const params   = new URLSearchParams(window.location.search);
+  const hash     = new URLSearchParams(window.location.hash.replace('#', ''));
+  const isSetup  = params.get('setup') === '1';
+  const hasToken = hash.get('access_token') || params.get('access_token');
+  const isAuthLanding = isSetup || hasToken;
+
+  // Auth — must run before branding slug check so we know who is logged in
   await initAuth();
+
   // Finalise admin setup if redirected from magic link
-  await finaliseAdminRegistration();
+  // Run BEFORE loadBrandingBySlug so institute has an admin before the check
+  if (isAuthLanding) {
+    await finaliseAdminRegistration();
+    // After finalising, reload slug branding normally
+  }
+
+  // Load branding from URL param — skip blocking check during setup landing
+  const slug = getInstituteSlugFromUrl();
+  if (slug) {
+    if (isAuthLanding) {
+      // Just apply branding silently — don't block on "no admin yet"
+      // because we just created the admin above
+      await loadBrandingBySlugSilent(slug);
+    } else {
+      await loadBrandingBySlug(slug);
+    }
+  }
 }

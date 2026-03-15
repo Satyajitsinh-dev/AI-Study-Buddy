@@ -160,26 +160,38 @@
 
   <!-- Success screen -->
   <div class="form-card success-card" id="success-card">
-    <div class="success-icon">🎉</div>
-    <h2 data-i18n="reg_success_title">You're all set!</h2>
-    <p data-i18n="reg_success_sub">Your school has been registered. Share this URL with your students and teachers:</p>
-    <div class="success-url-box">
-      <div class="label" data-i18n="reg_success_url_label">Your School's App URL</div>
-      <div class="url" id="success-url"></div>
-      <button class="copy-btn" id="copy-btn" onclick="copyUrl()" data-i18n="reg_copy_url">📋 Copy URL</button>
+    <div class="success-icon">📧</div>
+    <h2 data-i18n="reg_success_title">Check Your Email!</h2>
+    <p data-i18n="reg_success_sub">We've sent a magic link to your admin email. Click it to activate your account and complete school setup.</p>
+
+    <!-- Email hint box -->
+    <div class="success-url-box" style="background:#fffbeb;border-color:#fde68a;">
+      <div class="label" style="color:#92400e;">📬 Magic Link Sent To</div>
+      <div class="url" id="success-admin-email" style="color:#92400e;font-size:15px;font-family:'Nunito',sans-serif;font-weight:800;"></div>
+      <div style="font-size:12px;color:#b45309;margin-top:6px;">Check spam if you don't see it within 2 minutes.</div>
     </div>
+
+    <!-- What happens next -->
     <div class="success-steps">
-      <h4 data-i18n="reg_next_steps">Next steps:</h4>
+      <h4 data-i18n="reg_next_steps">What happens next:</h4>
       <ol>
-        <li data-i18n="reg_step1">Check your email — click the magic link to activate your admin account</li>
-        <li data-i18n="reg_step2">You'll land back on the app — the Admin Panel ⚙️ card will appear</li>
+        <li data-i18n="reg_step1">Click the magic link in your email to activate your admin account</li>
+        <li data-i18n="reg_step2">You'll land back on the app — complete the required school setup</li>
         <li data-i18n="reg_step3">Upload your question bank from the 📂 Question Bank section</li>
-        <li data-i18n="reg_step4">Share your URL with teachers — they sign in the same way</li>
-        <li data-i18n="reg_step5">Students can use the app without signing in — just open the URL</li>
+        <li data-i18n="reg_step4">Your school URL will be shown once setup is complete — then share it with teachers and students</li>
       </ol>
     </div>
-    <div style="margin-top:22px;">
-      <a class="submit-btn" id="goto-app-btn" href="" data-i18n="reg_open_app">Open Your School's App →</a>
+
+    <!-- URL hidden until setup complete — shown by showAdminSetupWelcome in supabase.js -->
+    <input type="hidden" id="success-url" value="" />
+
+    <div style="margin-top:22px;text-align:center;">
+      <p style="font-size:13px;color:var(--clr-muted);margin-bottom:14px;" data-i18n="reg_url_after_setup">
+        🔒 Your school URL will appear after you complete admin setup.
+      </p>
+      <a class="submit-btn" id="goto-app-btn" href=""
+         style="opacity:.55;pointer-events:none;cursor:not-allowed;"
+         data-i18n="reg_open_app_pending">Waiting for setup…</a>
     </div>
   </div>
 
@@ -213,10 +225,11 @@
     document.getElementById('color-preview').style.background = `linear-gradient(135deg,${p},${s})`;
   }
   function copyUrl() {
-    const url = document.getElementById('success-url').textContent;
-    const btn = document.getElementById('copy-btn');
+    // URL is stored in hidden input — only used programmatically, not shown yet
+    const url = document.getElementById('success-url').value;
+    if (!url) return;
     navigator.clipboard?.writeText(url)
-      .then(() => { btn.textContent = t('reg_copied'); })
+      .then(() => { const btn = document.getElementById('copy-btn'); if(btn) btn.textContent = t('reg_copied'); })
       .catch(() => { prompt(t('reg_success_url_label') + ':', url); });
   }
   async function submitRegistration() {
@@ -248,10 +261,13 @@
       errEl.style.display = 'block'; return;
     }
     const appUrl = BASE_URL + '?institute=' + result.slug;
-    document.getElementById('success-url').textContent     = appUrl;
-    document.getElementById('goto-app-btn').href           = appUrl;
-    document.getElementById('reg-form-card').style.display = 'none';
-    document.getElementById('success-card').style.display  = 'block';
+    // Store URL in hidden field — only revealed after admin completes setup
+    document.getElementById('success-url').value              = appUrl;
+    // Show the admin email so they know where to check
+    document.getElementById('success-admin-email').textContent = adminEmail;
+    document.getElementById('goto-app-btn').href               = appUrl;
+    document.getElementById('reg-form-card').style.display     = 'none';
+    document.getElementById('success-card').style.display      = 'block';
     window.scrollTo(0,0);
   }
   function initPage() {
